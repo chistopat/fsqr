@@ -43,13 +43,13 @@ services:
 
   tei:
     image: "${TEI_IMAGE:-fsqr/tei:cpu-arm64}"
-    platform: linux/arm64
+    platform: ${TEI_PLATFORM:-linux/arm64}
     build:
       context: "https://github.com/huggingface/text-embeddings-inference.git#${TEI_REF:-main}"
-      dockerfile: Dockerfile-arm64
+      dockerfile: ${TEI_DOCKERFILE:-Dockerfile-arm64}
       target: http
       platforms:
-        - linux/arm64
+        - ${TEI_PLATFORM:-linux/arm64}
     command:
       - --model-id
       - ${TEI_MODEL_ID:-intfloat/multilingual-e5-small}

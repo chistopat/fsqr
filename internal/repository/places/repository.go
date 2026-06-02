@@ -324,7 +324,10 @@ func selectSearchQuery(input normalizedSearchInput) searchQuery {
 	}
 }
 
-func antimeridianLongitudeRanges(location locationmodel.Location, bbox locationmodel.BBox) (float64, float64) {
+func antimeridianLongitudeRanges(
+	location locationmodel.Location,
+	bbox locationmodel.BBox,
+) (positiveMinLon, negativeMaxLon float64) {
 	centerLon := location.Lon()
 	lonDelta := bbox.LonDeltaDegrees()
 	if centerLon >= 0 {
