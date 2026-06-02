@@ -23,14 +23,14 @@ const (
 	defaultBaseURL         = "http://127.0.0.1:3000"
 	defaultTestDatabaseURL = "postgres://fsqr:fsqr@127.0.0.1:5432/fsqr_test?sslmode=disable"
 
-	cleanupFixture        = "docs/test-cases/fixtures/cleanup.sql"
-	categoriesCoreFixture = "docs/test-cases/fixtures/categories-core.sql"
-	coffeePaphosFixture   = "docs/test-cases/fixtures/search-coffee-paphos.sql"
-	fuelPaphosFixture     = "docs/test-cases/fixtures/search-fuel-paphos.sql"
-	highLatitudeFixture   = "docs/test-cases/fixtures/search-high-latitude.sql"
-	geographyFixture      = "docs/test-cases/fixtures/search-geography-paphos.sql"
-	antimeridianFixture   = "docs/test-cases/fixtures/search-antimeridian.sql"
-	placeDetailsFixture   = "docs/test-cases/fixtures/place-details.sql"
+	cleanupFixture        = "tests/fixtures/cleanup.sql"
+	categoriesCoreFixture = "tests/fixtures/categories-core.sql"
+	coffeePaphosFixture   = "tests/fixtures/search-coffee-paphos.sql"
+	fuelPaphosFixture     = "tests/fixtures/search-fuel-paphos.sql"
+	highLatitudeFixture   = "tests/fixtures/search-high-latitude.sql"
+	geographyFixture      = "tests/fixtures/search-geography-paphos.sql"
+	antimeridianFixture   = "tests/fixtures/search-antimeridian.sql"
+	placeDetailsFixture   = "tests/fixtures/place-details.sql"
 )
 
 type testEnv struct {
