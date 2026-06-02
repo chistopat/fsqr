@@ -1,0 +1,515 @@
+openapi: 3.0.3
+info:
+  title: fsqr API
+  version: 0.1.0
+  description: |
+    fsqr is a fast semantic geosearch API for places worldwide.
+
+    It turns human intent, such as "where is a gas station nearby?", into
+    the nearest 128 map-ready places wherever the user is. The target product
+    shape is Google-like local search UX: one request, instant points on the
+    map, no pagination.
+
+    Design target: about 100M places with about 100 ms response time for common
+    local searches.
+servers:
+  - url: http://localhost:3000
+    description: Local development
+tags:
+  - name: Health
+    description: Process and dependency readiness checks
+  - name: Search
+    description: Fast semantic place search
+  - name: Categories
+    description: Semantic place category search
+  - name: Places
+    description: Place details
+paths:
+  /live:
+    get:
+      tags:
+        - Health
+      operationId: live
+      summary: Process liveness check
+      responses:
+        "200":
+          description: Process is running.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthResponse"
+              example:
+                status: ok
+  /health:
+    get:
+      tags:
+        - Health
+      operationId: health
+      summary: Dependency readiness check
+      responses:
+        "200":
+          description: API dependencies are ready.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthResponse"
+              example:
+                status: ok
+        "503":
+          description: At least one required dependency is unavailable.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthResponse"
+              example:
+                status: unhealthy
+  /api/v1/search:
+    get:
+      tags:
+        - Search
+      operationId: searchPlaces
+      summary: Search places near a location
+      description: |
+        Finds places near a coordinate using a natural language query.
+
+        The backend builds a square bounding box around the provided location.
+        `distance_meters` is half of that square side.
+
+        The response is intentionally compact: clients get only the fields
+        needed to render points and labels on a map.
+      parameters:
+        - name: query
+          in: query
+          required: true
+          description: Natural language search intent.
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 512
+          example: where is a gas station nearby?
+        - name: location
+          in: query
+          required: true
+          description: |
+            Search center in "lat,lon" format.
+
+            For development and demo requests without a real user coordinate,
+            use Paphos center: 34.772013,32.429736.
+          schema:
+            type: string
+            pattern: '^-?([0-8]?\d(\.\d+)?|90(\.0+)?),-?((1[0-7]\d|\d?\d)(\.\d+)?|180(\.0+)?)$'
+          example: "34.772013,32.429736"
+        - name: limit
+          in: query
+          required: false
+          description: |
+            Maximum number of places to return.
+
+            Search is intentionally not paginated. Move the map or change the
+            query to run a new search.
+          schema:
+            type: integer
+            format: int32
+            minimum: 1
+            maximum: 128
+            default: 128
+          example: 128
+        - name: distance_meters
+          in: query
+          required: false
+          description: |
+            Half of the square search bounding box side in meters.
+
+            The backend uses the requested location as the square center.
+          schema:
+            type: integer
+            format: int32
+            minimum: 1
+            default: 5000
+          example: 5000
+      responses:
+        "200":
+          description: Compact map results matched for the requested intent.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SearchResponse"
+              examples:
+                gasStation:
+                  summary: Compact map results
+                  value:
+                    took_ms: 42
+                    places:
+                      - uuid: 4f4e2e16e4b0d1a3a4f1f123
+                        name: Example Fuel Station
+                        lat: 34.77521
+                        lon: 32.42214
+        "400":
+          description: Invalid search request.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              examples:
+                invalidLimit:
+                  value:
+                    error:
+                      code: invalid_request
+                      message: limit must be between 1 and 128
+        "500":
+          description: Unexpected server error.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                error:
+                  code: internal_error
+                  message: internal server error
+  /api/v1/categories:
+    get:
+      tags:
+        - Categories
+      operationId: searchCategories
+      summary: Search place categories
+      description: |
+        Finds matching Foursquare place categories using a natural language query.
+      parameters:
+        - name: query
+          in: query
+          required: true
+          description: Natural language category search intent.
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 512
+          example: coffee
+        - name: limit
+          in: query
+          required: false
+          description: Maximum number of categories to return.
+          schema:
+            type: integer
+            format: int32
+            minimum: 1
+            maximum: 100
+            default: 10
+          example: 3
+      responses:
+        "200":
+          description: Categories ordered by relevance for the requested intent.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Category"
+              examples:
+                coffee:
+                  value:
+                    - id: 42
+                      fsq_category_id: 4bf58dd8d48988d1e0931735
+                      name: Coffee Shop
+                      label: Dining and Drinking > Cafe, Coffee, and Tea House > Coffee Shop
+                      level: 3
+        "400":
+          description: Invalid category search request.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              examples:
+                emptyQuery:
+                  value:
+                    error:
+                      code: invalid_request
+                      message: search query must not be empty
+        "500":
+          description: Unexpected server error.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                error:
+                  code: internal_error
+                  message: internal server error
+  /api/v1/places/{uuid}:
+    get:
+      tags:
+        - Places
+      operationId: getPlace
+      summary: Get place details
+      description: |
+        Returns details for a place selected from search results.
+
+        The public `uuid` is the Foursquare place identifier stored internally
+        as `fsq_place_id`.
+      parameters:
+        - name: uuid
+          in: path
+          required: true
+          description: Public place UUID returned by search.
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 128
+          example: 4f4e2e16e4b0d1a3a4f1f123
+      responses:
+        "200":
+          description: Place details.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PlaceDetails"
+              examples:
+                gasStation:
+                  value:
+                    uuid: 4f4e2e16e4b0d1a3a4f1f123
+                    name: Example Fuel Station
+                    lat: 34.77521
+                    lon: 32.42214
+                    category:
+                      fsq_category_id: 4bf58dd8d48988d113951735
+                      name: Gas Station
+                      path: Travel and Transportation > Fuel Station
+                    address:
+                      line: 12 Example Street
+                      locality: Paphos
+                      region: Paphos
+                      country: CY
+                    contacts:
+                      tel: "+35726000000"
+                      website: https://example.com
+        "400":
+          description: Invalid place request.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              examples:
+                invalidUUID:
+                  value:
+                    error:
+                      code: invalid_request
+                      message: place uuid must be at most 128 characters
+        "404":
+          description: Place was not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              examples:
+                notFound:
+                  value:
+                    error:
+                      code: not_found
+                      message: place was not found
+        "500":
+          description: Unexpected server error.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                error:
+                  code: internal_error
+                  message: internal server error
+components:
+  schemas:
+    HealthResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - status
+      properties:
+        status:
+          type: string
+          enum:
+            - ok
+            - unhealthy
+    Category:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - fsq_category_id
+        - name
+        - label
+        - level
+      properties:
+        id:
+          type: integer
+          format: int64
+          description: Internal category identifier.
+        fsq_category_id:
+          type: string
+          description: Foursquare category identifier.
+        name:
+          type: string
+          description: Category display name.
+        label:
+          type: string
+          description: Full category path.
+        level:
+          type: integer
+          format: int32
+          minimum: 1
+          maximum: 6
+          description: Category hierarchy level.
+    SearchResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - took_ms
+        - places
+      properties:
+        took_ms:
+          type: integer
+          format: int32
+          minimum: 0
+          description: Server-side request time in milliseconds.
+        places:
+          type: array
+          description: Places ordered by distance after semantic category matching.
+          items:
+            $ref: "#/components/schemas/SearchPlace"
+    SearchPlace:
+      type: object
+      additionalProperties: false
+      required:
+        - uuid
+        - name
+        - lat
+        - lon
+      properties:
+        uuid:
+          type: string
+          description: Public place UUID. Internally this maps to fsq_place_id.
+        name:
+          type: string
+          description: Display name.
+        lat:
+          type: number
+          format: double
+          minimum: -90
+          maximum: 90
+        lon:
+          type: number
+          format: double
+          minimum: -180
+          maximum: 180
+    PlaceDetails:
+      type: object
+      additionalProperties: false
+      required:
+        - uuid
+        - name
+        - lat
+        - lon
+      properties:
+        uuid:
+          type: string
+          description: Public place UUID. Internally this maps to fsq_place_id.
+        name:
+          type: string
+          description: Display name.
+        lat:
+          type: number
+          format: double
+          minimum: -90
+          maximum: 90
+        lon:
+          type: number
+          format: double
+          minimum: -180
+          maximum: 180
+        category:
+          $ref: "#/components/schemas/PlaceCategory"
+        address:
+          $ref: "#/components/schemas/PlaceAddress"
+        contacts:
+          $ref: "#/components/schemas/PlaceContacts"
+    PlaceCategory:
+      type: object
+      additionalProperties: false
+      required:
+        - fsq_category_id
+        - name
+        - path
+      properties:
+        fsq_category_id:
+          type: string
+          description: Foursquare category identifier.
+        name:
+          type: string
+          description: Category display name.
+        path:
+          type: string
+          description: Full category path.
+    PlaceAddress:
+      type: object
+      additionalProperties: false
+      properties:
+        line:
+          type: string
+          nullable: true
+          description: Street address.
+        locality:
+          type: string
+          nullable: true
+          description: City or locality.
+        region:
+          type: string
+          nullable: true
+          description: Region, state, or province.
+        country:
+          type: string
+          nullable: true
+          description: Country code.
+    PlaceContacts:
+      type: object
+      additionalProperties: false
+      properties:
+        tel:
+          type: string
+          nullable: true
+        website:
+          type: string
+          format: uri
+          nullable: true
+        email:
+          type: string
+          format: email
+          nullable: true
+        facebook_id:
+          type: integer
+          format: int64
+          nullable: true
+        instagram:
+          type: string
+          nullable: true
+        twitter:
+          type: string
+          nullable: true
+    ErrorResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - error
+      properties:
+        error:
+          type: object
+          additionalProperties: false
+          required:
+            - code
+            - message
+          properties:
+            code:
+              type: string
+              enum:
+                - invalid_request
+                - not_found
+                - internal_error
+            message:
+              type: string

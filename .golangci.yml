@@ -1,0 +1,150 @@
+version: "2"
+
+linters:
+  default: standard
+  enable:
+    # Security
+    - gosec
+
+    # Architecture
+    - depguard
+    - interfacebloat
+
+    # Errors
+    - wrapcheck
+    - errorlint
+    - errname
+    - nilerr
+    - nilnil
+
+    # Deep analysis
+    - gocritic
+    - musttag
+    - bodyclose
+    - noctx
+
+    # Complexity
+    - cyclop
+    - funlen
+    - nestif
+
+    # Style
+    - misspell
+    - dupl
+    - unconvert
+    - unparam
+    - prealloc
+    - lll
+    - revive
+
+    # Dead code
+    - unused
+
+    # Meta
+    - nolintlint
+
+  settings:
+    cyclop:
+      max-complexity: 15
+
+    funlen:
+      lines: 120
+      statements: 50
+
+    nestif:
+      min-complexity: 5
+
+    interfacebloat:
+      max: 6
+
+    lll:
+      line-length: 120
+
+    gocritic:
+      enabled-tags:
+        - diagnostic
+        - style
+        - performance
+        - opinionated
+      settings:
+        hugeParam:
+          sizeThreshold: 96
+
+    depguard:
+      rules:
+        no-reflect:
+          files:
+            - "**/internal/**"
+          deny:
+            - pkg: reflect
+              desc: "no runtime reflection, use interfaces"
+
+        service-layer:
+          files:
+            - "**/internal/service/**"
+          deny:
+            - pkg: net/http
+              desc: "service must not depend on net/http"
+            - pkg: github.com/gofiber/fiber
+              desc: "service must not depend on Fiber"
+
+        repository-layer:
+          files:
+            - "**/internal/repository/**"
+          deny:
+            - pkg: github.com/gofiber/fiber
+              desc: "repository must not depend on Fiber"
+            - pkg: github.com/openai/openai-go
+              desc: "repository must not depend on embedding clients"
+
+        http-layer:
+          files:
+            - "**/internal/http/**"
+          deny:
+            - pkg: github.com/jmoiron/sqlx
+              desc: "HTTP layer must not depend on database clients"
+            - pkg: github.com/jackc/pgx
+              desc: "HTTP layer must not depend on database clients"
+            - pkg: github.com/openai/openai-go
+              desc: "HTTP layer must not depend on embedding clients"
+
+    wrapcheck:
+      ignore-package-globs:
+        - github.com/gofiber/fiber/*
+        - github.com/jmoiron/sqlx
+        - github.com/openai/openai-go*
+        - github.com/spf13/viper
+
+    nolintlint:
+      require-explanation: true
+      require-specific: true
+
+    revive:
+      rules:
+        - name: exported
+          disabled: true
+        - name: package-comments
+          disabled: true
+
+  exclusions:
+    rules:
+      - path: _test\.go
+        linters:
+          - wrapcheck
+          - dupl
+          - funlen
+          - gosec
+          - errcheck
+          - gocritic
+          - unparam
+
+      - path: cmd/fsqr/main\.go
+        linters:
+          - funlen
+          - cyclop
+          - gocritic
+
+formatters:
+  enable:
+    - gofmt
+    - goimports

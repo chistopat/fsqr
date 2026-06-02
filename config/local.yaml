@@ -1,0 +1,35 @@
+app:
+  name: fsqr
+  env: local
+
+http:
+  addr: ":3000"
+
+logger:
+  level: debug
+  encoding: console
+  development: true
+
+database:
+  dsn: "postgres://fsqr:fsqr@127.0.0.1:5432/fsqr?sslmode=disable"
+  max_open_conns: 8
+  max_idle_conns: 4
+  conn_max_lifetime: 30m
+  conn_max_idle_time: 5m
+  connect_timeout: 5s
+
+embeddings:
+  base_url: "http://127.0.0.1:8080/v1"
+  api_key: "tei-local"
+  model: "intfloat/multilingual-e5-small"
+  timeout: 10s
+
+observability:
+  service_name: fsqr
+  metrics:
+    addr: "127.0.0.1:3001"
+    path: "/metrics"
+  tracing:
+    enabled: false
+    otlp_endpoint_url: ""
+    otlp_insecure: true

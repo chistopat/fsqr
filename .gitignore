@@ -1,0 +1,12 @@
+.venv
+.idea
+.env
+.tmp
+__pycache__/
+*.py[cod]
+
+docs/
+etl/
+
+bin/*
+!bin/.gitkeep

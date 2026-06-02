@@ -1,0 +1,12 @@
+.git
+.idea
+.env
+.tmp
+.venv
+
+bin/
+etl/
+
+*.db
+*.pyc
+__pycache__/

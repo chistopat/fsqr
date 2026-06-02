@@ -1,0 +1,11 @@
+apiVersion: 1
+
+providers:
+  - name: FSQR
+    orgId: 1
+    folder: FSQR
+    type: file
+    disableDeletion: false
+    editable: true
+    options:
+      path: /etc/grafana/dashboards
