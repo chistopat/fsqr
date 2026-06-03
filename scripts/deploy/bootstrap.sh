@@ -50,13 +50,6 @@ yaml_quote() {
     printf "'%s'" "$value"
 }
 
-pg_conninfo_quote() {
-    local value="$1"
-    value="${value//\\/\\\\}"
-    value="${value//\'/\\\'}"
-    printf "'%s'" "$value"
-}
-
 load_root_env() {
     require_file "$env_file"
 
@@ -82,7 +75,7 @@ generate_config_file() {
     local embeddings_model="${TEI_SERVED_MODEL_NAME:-intfloat/multilingual-e5-small}"
     local database_dsn
 
-    database_dsn="host=postgres port=5432 dbname=$(pg_conninfo_quote "$postgres_db") user=$(pg_conninfo_quote "$postgres_user") password=$(pg_conninfo_quote "$POSTGRES_PASSWORD") sslmode=disable"
+    database_dsn="host=postgres port=5432 dbname=$postgres_db user=$postgres_user password=$POSTGRES_PASSWORD sslmode=disable"
 
     cat > "$path" <<EOF_CONFIG
 app:
@@ -197,7 +190,7 @@ generate_compose_env_file "$tmpdir/.env"
 generate_config_file "$tmpdir/config.yaml"
 cp "$repo_root"/migrations/*.sql "$tmpdir/migrations/"
 chmod 600 "$tmpdir/.env"
-chmod 600 "$tmpdir/config.yaml"
+chmod 644 "$tmpdir/config.yaml"
 
 log "waiting for ssh: $target"
 wait_for_ssh "$target"
@@ -232,7 +225,7 @@ done
 
 cd "$APP_DIR"
 chmod 600 .env
-chmod 600 config.yaml
+chmod 644 config.yaml
 
 set -a
 # The generated .env quotes values, so source it instead of parsing raw lines.
