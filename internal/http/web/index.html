@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>fsqr semantic map search</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+  <link rel="stylesheet" href="/assets/styles.css">
+</head>
+<body>
+  <div class="ribbon">fsqr semantic geosearch: human intent in, map-ready places out</div>
+
+  <header class="control-deck" aria-label="Search controls">
+    <section class="brand-block" aria-labelledby="brand-title">
+      <div class="brand-kicker">Dataset:</div>
+      <h1 id="brand-title">Places</h1>
+      <a href="/swagger" class="deck-button deck-button-ghost">API docs</a>
+    </section>
+
+    <form id="search-form" class="query-form">
+      <label for="query">Human query:</label>
+      <textarea id="query" rows="2" maxlength="512" spellcheck="false" data-gramm="false"
+        placeholder="coffee near the sea, gas station nearby, quiet restaurant"></textarea>
+      <button type="submit" class="deck-button deck-button-primary">Search</button>
+    </form>
+
+    <section class="preset-strip" aria-label="Example searches">
+      <span>Examples:</span>
+      <button type="button" data-query="coffee nearby">Coffee</button>
+      <button type="button" data-query="gas station nearby">Fuel</button>
+      <button type="button" data-query="seafood restaurant by the sea">Seafood</button>
+      <button type="button" data-query="pharmacy nearby">Pharmacy</button>
+      <button type="button" data-query="hotel with parking">Hotels</button>
+      <button type="button" data-query="ATM nearby">ATM</button>
+    </section>
+
+    <section class="status-strip" aria-live="polite">
+      <span id="status-dot" class="status-dot" aria-hidden="true"></span>
+      <span id="status-text">Ready</span>
+      <span id="stats-text" class="stats-text">center 34.772013, 32.429736</span>
+    </section>
+  </header>
+
+  <main class="workspace">
+    <section id="map" class="map-panel" aria-label="Search map"></section>
+
+    <aside class="report-panel" aria-label="Search report">
+      <div class="report-header">
+        <p>Report</p>
+        <button id="locate-button" type="button" class="deck-button deck-button-ghost">Use my location</button>
+      </div>
+      <div id="summary" class="summary-grid"></div>
+      <div id="details" class="details-card empty">Select a result for details.</div>
+      <ol id="results" class="result-list"></ol>
+    </aside>
+  </main>
+
+  <template id="result-row-template">
+    <li class="result-row">
+      <button type="button">
+        <span class="result-name"></span>
+        <span class="result-meta"></span>
+      </button>
+    </li>
+  </template>
+
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="/assets/app.js" defer></script>
+</body>
+</html>

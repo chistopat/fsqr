@@ -427,6 +427,69 @@ func TestSwaggerViewerReferencesSwaggerJSON(t *testing.T) {
 	}
 }
 
+func TestFrontendIndexReturnsAppShell(t *testing.T) {
+	app := NewRouter(Dependencies{})
+
+	resp, err := app.Test(httptest.NewRequest(http.MethodGet, "/", nil))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		_ = resp.Body.Close()
+	}()
+
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, resp.StatusCode)
+	}
+	if !strings.Contains(resp.Header.Get("Content-Type"), "text/html") {
+		t.Fatalf("expected html content type, got %q", resp.Header.Get("Content-Type"))
+	}
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, expected := range []string{
+		"fsqr semantic geosearch",
+		"Human query:",
+		`src="/assets/app.js"`,
+	} {
+		if !strings.Contains(string(body), expected) {
+			t.Fatalf("expected frontend body to contain %q", expected)
+		}
+	}
+}
+
+func TestFrontendAssetReturnsStylesheet(t *testing.T) {
+	app := NewRouter(Dependencies{})
+
+	resp, err := app.Test(httptest.NewRequest(http.MethodGet, "/assets/styles.css", nil))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		_ = resp.Body.Close()
+	}()
+
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, resp.StatusCode)
+	}
+	if !strings.Contains(resp.Header.Get("Content-Type"), "text/css") {
+		t.Fatalf("expected css content type, got %q", resp.Header.Get("Content-Type"))
+	}
+	if resp.Header.Get("Cache-Control") == "" {
+		t.Fatal("expected cache-control header")
+	}
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(body), "--signal") {
+		t.Fatalf("expected stylesheet body to contain design variables")
+	}
+}
+
 func TestInternalErrorsDoNotLeakDetails(t *testing.T) {
 	app := NewRouter(Dependencies{
 		CategoryService: &stubCategoryService{err: errors.New("db password leaked")},
