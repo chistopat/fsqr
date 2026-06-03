@@ -17,3 +17,6 @@ deployment/*.tfstate
 deployment/*.tfstate.*
 deployment/*.tfvars
 deployment/*.tfvars.json
+
+# OpenTofu/Terraform local artifacts
+deployment/.terraform.lock.hcl

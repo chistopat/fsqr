@@ -16,3 +16,6 @@ etl/
 *.db
 *.pyc
 __pycache__/
+
+# OpenTofu/Terraform local artifacts
+deployment/.terraform.lock.hcl
