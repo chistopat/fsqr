@@ -10,7 +10,7 @@ services:
       - "80:80"
       - "443:443"
     environment:
-      FSQR_DOMAIN: ${FSQR_DOMAIN:-:80}
+      FSQR_DOMAIN: ${FSQR_DOMAIN:?FSQR_DOMAIN must be set}
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy-data:/data

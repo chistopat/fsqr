@@ -169,9 +169,19 @@ cloud:
         echo "HCLOUD_TOKEN or HCLOUD_API_KEY must be set" >&2
         exit 1
     fi
+    if [[ -z "${FSQR_DOMAIN:-}" ]]; then
+        echo "FSQR_DOMAIN must be set" >&2
+        exit 1
+    fi
+    if [[ -z "${FSQR_DNS_ZONE:-}" ]]; then
+        echo "FSQR_DNS_ZONE must be set" >&2
+        exit 1
+    fi
 
     export HCLOUD_TOKEN="$token"
     export TF_VAR_hcloud_token="$token"
+    export TF_VAR_app_domain="$FSQR_DOMAIN"
+    export TF_VAR_dns_zone_name="$FSQR_DNS_ZONE"
 
     cd deployment
     tofu init -input=false

@@ -7,6 +7,8 @@ OpenTofu configuration for one Hetzner Cloud VM in Helsinki with Docker CE prein
 - Firewall: inbound TCP `22`, `80`, `443` only.
 - Static Primary IPv4: `auto_delete = false` so DNS can keep using the same address after VM replacement.
 - Server: `cpx42` in `hel1` Helsinki, image `docker-ce`, IPv4 enabled, IPv6 disabled.
+- DNS zone: primary Hetzner DNS zone for `kailas.cloud`.
+- DNS record: `A` RRSet for `fsqr.kailas.cloud` pointing at the static Primary IPv4.
 - SSH key: uploaded from `../.ssh/fsqr_hcloud_ed25519.pub`.
 - Cloud-init: creates non-root `deploy` user, disables password auth and root SSH, verifies Docker Compose.
 
@@ -24,7 +26,8 @@ Optional root `.env` values used by Compose/bootstrap:
 
 ```env
 FSQR_IMAGE=ghcr.io/chistopat/fsqr:latest
-FSQR_DOMAIN=:80
+FSQR_DOMAIN=fsqr.kailas.cloud
+FSQR_DNS_ZONE=kailas.cloud
 POSTGRES_DB=fsqr
 POSTGRES_USER=fsqr
 FSQR_EMBEDDINGS_API_KEY=tei-local
@@ -63,7 +66,16 @@ Create resources only after reviewing the plan:
 tofu apply
 ```
 
-After apply, use the output SSH command. Domain DNS will be configured manually to the `ipv4_address` output.
+After apply, use the output SSH command. `just cloud` maps root `.env`
+`FSQR_DOMAIN` to Terraform `app_domain` and `FSQR_DNS_ZONE` to Terraform
+`dns_zone_name`. The `app_domain` output is managed as an `A` record in Hetzner
+DNS and points to the `ipv4_address` output.
+
+If `kailas.cloud` is not delegated to Hetzner nameservers yet, update the
+registrar to use the `dns_zone_nameservers` output. Terraform can manage the
+zone and records inside Hetzner, but registrar-level nameserver delegation is
+still an external domain-registration setting unless the registrar exposes it to
+this same Terraform state.
 
 ## App Bootstrap
 
@@ -106,7 +118,10 @@ FSQR_DEPLOY_DIR=/opt/fsqr just bootstrap
 FSQR_ROOT_ENV_FILE=.env just bootstrap
 ```
 
-Set `FSQR_DOMAIN` in root `.env` after DNS points to the server. The default `:80` serves HTTP only; a real domain enables Caddy-managed HTTPS.
+Set `FSQR_DOMAIN=fsqr.kailas.cloud` in root `.env`. This is the single hostname
+source of truth for Terraform, bootstrap, Compose, and Caddy. Bootstrap writes
+that value to `/opt/fsqr/.env`; Caddy then serves HTTPS and obtains a
+certificate for the subdomain automatically once DNS resolves to the server.
 
 ## SSH Access
 

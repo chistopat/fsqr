@@ -57,3 +57,25 @@ variable "ssh_source_ips" {
   type        = list(string)
   default     = ["0.0.0.0/0"]
 }
+
+variable "dns_zone_name" {
+  description = "Primary Hetzner DNS zone that contains the public fsqr hostname."
+  type        = string
+}
+
+variable "app_domain" {
+  description = "Public hostname for the fsqr API. Must be inside dns_zone_name."
+  type        = string
+}
+
+variable "dns_ttl" {
+  description = "TTL in seconds for fsqr DNS records."
+  type        = number
+  default     = 300
+}
+
+variable "dns_delete_protection" {
+  description = "Protect the Hetzner DNS zone from accidental deletion."
+  type        = bool
+  default     = true
+}

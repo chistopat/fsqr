@@ -146,7 +146,7 @@ generate_compose_env_file() {
 
     : > "$path"
     write_env_var "$path" FSQR_IMAGE "${FSQR_IMAGE:-ghcr.io/chistopat/fsqr:latest}"
-    write_env_var "$path" FSQR_DOMAIN "${FSQR_DOMAIN:-:80}"
+    write_env_var "$path" FSQR_DOMAIN "$FSQR_DOMAIN"
     write_env_var "$path" POSTGRES_DB "${POSTGRES_DB:-fsqr}"
     write_env_var "$path" POSTGRES_USER "${POSTGRES_USER:-fsqr}"
     write_env_var "$path" POSTGRES_PASSWORD "$POSTGRES_PASSWORD"
@@ -180,6 +180,7 @@ require_file "$caddyfile"
 require_file "$ssh_key"
 load_root_env
 require_env POSTGRES_PASSWORD
+require_env FSQR_DOMAIN
 
 host="$(resolve_host)"
 target="$ssh_user@$host"

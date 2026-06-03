@@ -17,3 +17,18 @@ output "ssh_command" {
   description = "Command for connecting to the server after cloud-init finishes."
   value       = "ssh -i ${var.ssh_private_key_path} ${var.admin_user}@${hcloud_primary_ip.ipv4.ip_address}"
 }
+
+output "app_domain" {
+  description = "Public fsqr API hostname managed by Hetzner DNS."
+  value       = local.app_domain_normalized
+}
+
+output "app_base_url" {
+  description = "Public fsqr API base URL."
+  value       = "https://${local.app_domain_normalized}"
+}
+
+output "dns_zone_nameservers" {
+  description = "Authoritative Hetzner nameservers that must be delegated at the domain registrar."
+  value       = hcloud_zone.primary.authoritative_nameservers.assigned
+}
