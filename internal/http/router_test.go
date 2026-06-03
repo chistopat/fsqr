@@ -368,6 +368,65 @@ func TestHealthReturnsUnavailable(t *testing.T) {
 	}
 }
 
+func TestSwaggerJSONReturnsOpenAPIDocument(t *testing.T) {
+	app := NewRouter(Dependencies{})
+
+	resp, err := app.Test(httptest.NewRequest(http.MethodGet, "/swagger.json", nil))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		_ = resp.Body.Close()
+	}()
+
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, resp.StatusCode)
+	}
+	if !strings.Contains(resp.Header.Get("Content-Type"), "application/json") {
+		t.Fatalf("expected json content type, got %q", resp.Header.Get("Content-Type"))
+	}
+
+	var document map[string]any
+	if err := json.NewDecoder(resp.Body).Decode(&document); err != nil {
+		t.Fatal(err)
+	}
+	if document["openapi"] != "3.0.3" {
+		t.Fatalf("expected OpenAPI 3.0.3 document, got %q", document["openapi"])
+	}
+}
+
+func TestSwaggerViewerReferencesSwaggerJSON(t *testing.T) {
+	app := NewRouter(Dependencies{})
+
+	resp, err := app.Test(httptest.NewRequest(http.MethodGet, "/swagger", nil))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		_ = resp.Body.Close()
+	}()
+
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, resp.StatusCode)
+	}
+	if !strings.Contains(resp.Header.Get("Content-Type"), "text/html") {
+		t.Fatalf("expected html content type, got %q", resp.Header.Get("Content-Type"))
+	}
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, expected := range []string{
+		"SwaggerUIBundle",
+		`url: "/swagger.json"`,
+	} {
+		if !strings.Contains(string(body), expected) {
+			t.Fatalf("expected viewer body to contain %q", expected)
+		}
+	}
+}
+
 func TestInternalErrorsDoNotLeakDetails(t *testing.T) {
 	app := NewRouter(Dependencies{
 		CategoryService: &stubCategoryService{err: errors.New("db password leaked")},

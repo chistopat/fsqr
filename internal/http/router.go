@@ -50,6 +50,9 @@ func NewRouter(deps Dependencies) *fiber.App {
 	app.Use(recordHTTPMetrics(newHTTPMetrics(metricsRegistry)))
 	app.Get("/live", live)
 	app.Get("/health", health(deps.HealthChecker, log))
+	app.Get("/swagger.json", serveSwaggerJSON)
+	app.Get("/swagger", serveSwaggerViewer)
+	app.Get("/swagger/", serveSwaggerViewer)
 
 	api := app.Group("/api/v1")
 	api.Get("/search", searchPlaces(deps.SearchService, log))
