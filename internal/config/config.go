@@ -27,6 +27,7 @@ type Config struct {
 	Database      DatabaseConfig      `mapstructure:"database"`
 	Embeddings    EmbeddingsConfig    `mapstructure:"embeddings"`
 	Observability ObservabilityConfig `mapstructure:"observability"`
+	Web           WebConfig           `mapstructure:"web"`
 }
 
 type AppConfig struct {
@@ -58,6 +59,11 @@ type EmbeddingsConfig struct {
 	APIKey  string        `mapstructure:"api_key"`
 	Model   string        `mapstructure:"model"`
 	Timeout time.Duration `mapstructure:"timeout"`
+}
+
+type WebConfig struct {
+	MapboxAccessToken string `mapstructure:"mapbox_access_token"`
+	MapboxStyle       string `mapstructure:"mapbox_style"`
 }
 
 type ObservabilityConfig struct {
@@ -139,6 +145,8 @@ func setDefaults(loader *viper.Viper, env string) {
 	loader.SetDefault("observability.tracing.enabled", false)
 	loader.SetDefault("observability.tracing.otlp_endpoint_url", "")
 	loader.SetDefault("observability.tracing.otlp_insecure", true)
+	loader.SetDefault("web.mapbox_access_token", "")
+	loader.SetDefault("web.mapbox_style", "mapbox/light-v11")
 }
 
 func bindEnv(loader *viper.Viper) {
@@ -168,6 +176,13 @@ func bindEnv(loader *viper.Viper) {
 		"OTEL_EXPORTER_OTLP_ENDPOINT",
 	)
 	_ = loader.BindEnv("observability.tracing.otlp_insecure", "FSQR_TRACING_OTLP_INSECURE", "OTEL_EXPORTER_OTLP_INSECURE")
+	_ = loader.BindEnv(
+		"web.mapbox_access_token",
+		"FSQR_WEB_MAPBOX_ACCESS_TOKEN",
+		"MAPBOX_ACCESS_TOKEN",
+		"MAPBOX_API_KEY",
+	)
+	_ = loader.BindEnv("web.mapbox_style", "FSQR_WEB_MAPBOX_STYLE", "MAPBOX_STYLE")
 }
 
 func firstNonEmpty(values ...string) string {

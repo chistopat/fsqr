@@ -74,6 +74,8 @@ generate_config_file() {
     local postgres_user="${POSTGRES_USER:-fsqr}"
     local embeddings_api_key="${FSQR_EMBEDDINGS_API_KEY:-tei-local}"
     local embeddings_model="${TEI_SERVED_MODEL_NAME:-intfloat/multilingual-e5-small}"
+    local mapbox_access_token="${FSQR_WEB_MAPBOX_ACCESS_TOKEN:-${MAPBOX_ACCESS_TOKEN:-${MAPBOX_API_KEY:-}}}"
+    local mapbox_style="${FSQR_WEB_MAPBOX_STYLE:-${MAPBOX_STYLE:-mapbox/light-v11}}"
     local database_dsn
 
     database_dsn="host=postgres port=5432 dbname=$postgres_db user=$postgres_user password=$POSTGRES_PASSWORD sslmode=disable"
@@ -104,6 +106,10 @@ embeddings:
   api_key: $(yaml_quote "$embeddings_api_key")
   model: $(yaml_quote "$embeddings_model")
   timeout: 10s
+
+web:
+  mapbox_access_token: $(yaml_quote "$mapbox_access_token")
+  mapbox_style: $(yaml_quote "$mapbox_style")
 
 observability:
   service_name: fsqr

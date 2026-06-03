@@ -452,10 +452,52 @@ func TestFrontendIndexReturnsAppShell(t *testing.T) {
 	for _, expected := range []string{
 		"fsqr semantic geosearch",
 		"Human query:",
-		`src="/assets/app.js"`,
+		`src="/assets/config.js"`,
+		`src="/assets/app.js?v=mapbox-light-geo-wrap"`,
 	} {
 		if !strings.Contains(string(body), expected) {
 			t.Fatalf("expected frontend body to contain %q", expected)
+		}
+	}
+}
+
+func TestFrontendConfigReturnsMapboxSettings(t *testing.T) {
+	app := NewRouter(Dependencies{
+		WebConfig: &WebConfig{
+			MapboxAccessToken: "pk.test",
+			MapboxStyle:       "mapbox/dark-v11",
+		},
+	})
+
+	resp, err := app.Test(httptest.NewRequest(http.MethodGet, "/assets/config.js", nil))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		_ = resp.Body.Close()
+	}()
+
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, resp.StatusCode)
+	}
+	if !strings.Contains(resp.Header.Get("Content-Type"), "text/javascript") {
+		t.Fatalf("expected javascript content type, got %q", resp.Header.Get("Content-Type"))
+	}
+	if resp.Header.Get("Cache-Control") != "no-store" {
+		t.Fatalf("expected no-store cache-control header, got %q", resp.Header.Get("Cache-Control"))
+	}
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, expected := range []string{
+		"window.FSQR_CONFIG = ",
+		`"mapboxAccessToken":"pk.test"`,
+		`"mapboxStyle":"mapbox/dark-v11"`,
+	} {
+		if !strings.Contains(string(body), expected) {
+			t.Fatalf("expected frontend config body to contain %q", expected)
 		}
 	}
 }

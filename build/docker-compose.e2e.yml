@@ -16,6 +16,11 @@ services:
       FSQR_EMBEDDINGS_BASE_URL: "http://tei/v1"
       FSQR_EMBEDDINGS_API_KEY: ${FSQR_EMBEDDINGS_API_KEY:-tei-local}
       FSQR_EMBEDDINGS_MODEL: ${FSQR_EMBEDDINGS_MODEL:-intfloat/multilingual-e5-small}
+      FSQR_WEB_MAPBOX_ACCESS_TOKEN: ${FSQR_WEB_MAPBOX_ACCESS_TOKEN:-}
+      FSQR_WEB_MAPBOX_STYLE: ${FSQR_WEB_MAPBOX_STYLE:-mapbox/light-v11}
+      MAPBOX_ACCESS_TOKEN: ${MAPBOX_ACCESS_TOKEN:-}
+      MAPBOX_API_KEY: ${MAPBOX_API_KEY:-}
+      MAPBOX_STYLE: ${MAPBOX_STYLE:-}
       FSQR_TRACING_ENABLED: "false"
     depends_on:
       postgres:

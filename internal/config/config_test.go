@@ -8,6 +8,8 @@ import (
 func TestLoadLocalConfig(t *testing.T) {
 	t.Setenv("FSQR_ENV", "local")
 	t.Setenv("FSQR_CONFIG_DIR", "../../config")
+	t.Setenv("FSQR_WEB_MAPBOX_ACCESS_TOKEN", "pk.test")
+	t.Setenv("FSQR_WEB_MAPBOX_STYLE", "mapbox/dark-v11")
 
 	cfg, err := Load()
 	if err != nil {
@@ -25,5 +27,11 @@ func TestLoadLocalConfig(t *testing.T) {
 	}
 	if cfg.Embeddings.Model == "" {
 		t.Fatal("expected embeddings model to be set")
+	}
+	if cfg.Web.MapboxAccessToken != "pk.test" {
+		t.Fatalf("expected mapbox token from env, got %q", cfg.Web.MapboxAccessToken)
+	}
+	if cfg.Web.MapboxStyle != "mapbox/dark-v11" {
+		t.Fatalf("expected mapbox style from env, got %q", cfg.Web.MapboxStyle)
 	}
 }

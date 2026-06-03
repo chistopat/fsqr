@@ -1,8 +1,10 @@
 (() => {
   const defaultCenter = { lat: 34.772013, lon: 32.429736, zoom: 13 };
-  const maxSearchDistanceMeters = 50000;
+  const maxSearchDistanceMeters = 500000;
   const minSearchDistanceMeters = 500;
   const searchLimit = 128;
+  const defaultMapboxStyle = "mapbox/light-v11";
+  const webConfig = window.FSQR_CONFIG || {};
 
   const queryInput = document.getElementById("query");
   const form = document.getElementById("search-form");
@@ -23,12 +25,10 @@
     zoom: initial.zoom,
     zoomControl: true,
     preferCanvas: true,
+    worldCopyJump: true,
   });
 
-  L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
-    maxZoom: 19,
-    attribution: "&copy; OpenStreetMap contributors",
-  }).addTo(map);
+  createTileLayer().addTo(map);
 
   const markerLayer = L.layerGroup().addTo(map);
   const state = {
@@ -96,8 +96,8 @@
 
   function readInitialState() {
     const params = new URLSearchParams(window.location.search);
-    const lat = finiteNumber(params.get("lat"), defaultCenter.lat);
-    const lon = finiteNumber(params.get("lon"), defaultCenter.lon);
+    const lat = clampLatitude(finiteNumber(params.get("lat"), defaultCenter.lat));
+    const lon = wrapLongitude(finiteNumber(params.get("lon"), defaultCenter.lon));
     const zoom = finiteNumber(params.get("z") || params.get("zoom"), defaultCenter.zoom);
     const query = params.get("q") || params.get("query") || "coffee nearby";
 
@@ -107,6 +107,81 @@
   function finiteNumber(raw, fallback) {
     const value = Number(raw);
     return Number.isFinite(value) ? value : fallback;
+  }
+
+  function normalizedCenter() {
+    const center = map.getCenter();
+
+    return {
+      lat: clampLatitude(center.lat),
+      lng: wrapLongitude(center.lng),
+    };
+  }
+
+  function clampLatitude(value) {
+    if (!Number.isFinite(value)) {
+      return defaultCenter.lat;
+    }
+
+    return Math.max(-90, Math.min(90, value));
+  }
+
+  function wrapLongitude(value) {
+    if (!Number.isFinite(value)) {
+      return defaultCenter.lon;
+    }
+
+    const normalized = ((((value + 180) % 360) + 360) % 360) - 180;
+
+    return normalized === -180 && value > 0 ? 180 : normalized;
+  }
+
+  function createTileLayer() {
+    const token = stringValue(webConfig.mapboxAccessToken);
+    if (token) {
+      const style = normalizeMapboxStyle(webConfig.mapboxStyle);
+      const tileURL =
+        `https://api.mapbox.com/styles/v1/${style}/tiles/512/{z}/{x}/{y}@2x` +
+        `?access_token=${encodeURIComponent(token)}`;
+
+      return L.tileLayer(tileURL, {
+        tileSize: 512,
+        zoomOffset: -1,
+        maxZoom: 22,
+        attribution:
+          '&copy; <a href="https://www.mapbox.com/about/maps/">Mapbox</a> ' +
+          '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
+      });
+    }
+
+    return L.tileLayer("https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png", {
+      maxZoom: 20,
+      attribution:
+        '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> ' +
+        '&copy; <a href="https://carto.com/attributions">CARTO</a>',
+    });
+  }
+
+  function normalizeMapboxStyle(rawStyle) {
+    const strippedStyle = stringValue(rawStyle)
+      .replace(/^mapbox:\/\/styles\//, "")
+      .replace(/^https:\/\/api\.mapbox\.com\/styles\/v1\//, "")
+      .replace(/\/tiles\/.*$/, "");
+    const style = strippedStyle || defaultMapboxStyle;
+
+    if (style === "mapbox/standard" || style === "mapbox/standard-satellite") {
+      return defaultMapboxStyle;
+    }
+
+    if (/^[A-Za-z0-9._-]+\/[A-Za-z0-9._-]+$/.test(style)) {
+      return style;
+    }
+
+    return defaultMapboxStyle;
+  }
+
+  function stringValue(value) {
+    return typeof value === "string" ? value.trim() : "";
   }
 
   async function runSearch(reason) {
@@ -125,7 +200,7 @@
       state.abort.abort();
     }
 
-    const center = map.getCenter();
+    const center = normalizedCenter();
     const distance = currentDistanceMeters();
     const requestID = Date.now();
     state.lastStartedAt = requestID;
@@ -296,7 +371,7 @@
   }
 
   function renderSummary({ tookMS, places, distance }) {
-    const center = map.getCenter();
+    const center = normalizedCenter();
     const cells = [
       ["places", places.toLocaleString()],
       ["took", `${Number(tookMS).toLocaleString()} ms`],
@@ -334,15 +409,19 @@
   }
 
   function syncCoordinateText() {
-    const center = map.getCenter();
+    const center = normalizedCenter();
     statsText.textContent = `center ${center.lat.toFixed(6)}, ${center.lng.toFixed(6)} / z${map.getZoom()}`;
   }
 
   function writePermalink(query, center) {
+    const normalized = {
+      lat: clampLatitude(center.lat),
+      lng: wrapLongitude(center.lng),
+    };
     const params = new URLSearchParams();
     params.set("q", query);
-    params.set("lat", center.lat.toFixed(6));
-    params.set("lon", center.lng.toFixed(6));
+    params.set("lat", normalized.lat.toFixed(6));
+    params.set("lon", normalized.lng.toFixed(6));
     params.set("z", String(map.getZoom()));
     window.history.replaceState(null, "", `${window.location.pathname}?${params}`);
   }

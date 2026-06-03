@@ -223,16 +223,16 @@ button {
 
 .map-panel {
   min-height: 100%;
-  background: #0b0d0d;
+  background: #edf1ec;
 }
 
 .leaflet-container {
   font-family: inherit;
-  background: #0b0d0d;
+  background: #edf1ec;
 }
 
 .leaflet-tile-pane {
-  filter: saturate(0.65) brightness(0.48) contrast(1.38);
+  filter: saturate(1.04) brightness(1.02) contrast(1.02);
 }
 
 .leaflet-control-zoom a {

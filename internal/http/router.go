@@ -27,6 +27,7 @@ type Dependencies struct {
 	HealthChecker   HealthChecker
 	MetricsRegistry *prometheus.Registry
 	Logger          *zap.Logger
+	WebConfig       *WebConfig
 }
 
 type CategoryService interface {
@@ -53,7 +54,7 @@ func NewRouter(deps Dependencies) *fiber.App {
 	app.Get("/swagger.json", serveSwaggerJSON)
 	app.Get("/swagger", serveSwaggerViewer)
 	app.Get("/swagger/", serveSwaggerViewer)
-	registerFrontend(app)
+	registerFrontend(app, webConfigOrDefault(deps.WebConfig))
 
 	api := app.Group("/api/v1")
 	api.Get("/search", searchPlaces(deps.SearchService, log))

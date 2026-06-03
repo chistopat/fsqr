@@ -103,6 +103,10 @@ func main() {
 		HealthChecker:   database,
 		MetricsRegistry: metricsRegistry,
 		Logger:          appLogger.Named("http"),
+		WebConfig: &httpapi.WebConfig{
+			MapboxAccessToken: cfg.Web.MapboxAccessToken,
+			MapboxStyle:       cfg.Web.MapboxStyle,
+		},
 	})
 	metricsApp := httpapi.NewMetricsRouter(metricsRegistry, cfg.Observability.Metrics.Path)
 	appLogger.Info(
