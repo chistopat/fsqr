@@ -81,7 +81,7 @@ The bootstrap command:
 - Generates `/opt/fsqr/config.yaml` for application settings.
 - Copies `build/docker-compose.prod.yml` as `/opt/fsqr/compose.yml`, plus `Caddyfile.prod` and SQL migrations.
 - Optionally logs in to GHCR when `GHCR_USERNAME` and `GHCR_TOKEN` are present in root `.env`.
-- Runs `docker compose pull`, applies migrations, and starts the stack.
+- Runs `docker compose pull` and starts the stack. It does not apply migrations.
 
 The `fsqr` container receives application settings only through
 `FSQR_CONFIG_FILE=/app/config/config.yaml`; production database and embedding

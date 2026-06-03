@@ -233,15 +233,20 @@ cd "$APP_DIR"
 chmod 600 .env
 chmod 600 config.yaml
 
-ghcr_user="$(sed -n 's/^GHCR_USERNAME=//p' .env | tail -n 1)"
-ghcr_token="$(sed -n 's/^GHCR_TOKEN=//p' .env | tail -n 1)"
+set -a
+# The generated .env quotes values, so source it instead of parsing raw lines.
+# Otherwise GHCR_USERNAME="" is read as a non-empty literal and triggers a bad login.
+source .env
+set +a
+
+ghcr_user="${GHCR_USERNAME:-}"
+ghcr_token="${GHCR_TOKEN:-}"
 if [[ -n "$ghcr_user" && -n "$ghcr_token" ]]; then
     printf '%s' "$ghcr_token" | docker login ghcr.io -u "$ghcr_user" --password-stdin >/dev/null
 fi
 
 docker compose pull
 docker compose up -d postgres tei
-docker compose run --rm migrate
 docker compose up -d --remove-orphans fsqr caddy watchtower
 EOF_REMOTE
 
