@@ -202,6 +202,8 @@ jobs:
           docker push "${IMAGE}:${VERSION}"
           docker tag "${IMAGE}:${VERSION}" "${IMAGE}:prod"
           docker push "${IMAGE}:prod"
+          docker tag "${IMAGE}:${VERSION}" "${IMAGE}:latest"
+          docker push "${IMAGE}:latest"
 
       - name: Create GitHub release
         env:

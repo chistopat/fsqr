@@ -8,8 +8,8 @@ deployment_dir="$repo_root/deployment"
 app_dir="${FSQR_DEPLOY_DIR:-/opt/fsqr}"
 ssh_user="${FSQR_DEPLOY_USER:-deploy}"
 ssh_key="${FSQR_DEPLOY_SSH_KEY:-$repo_root/.ssh/fsqr_hcloud_ed25519}"
-env_file="${FSQR_DEPLOY_ENV_FILE:-$deployment_dir/.env.deploy}"
-compose_file="$deployment_dir/compose.prod.yml"
+env_file="${FSQR_ROOT_ENV_FILE:-$repo_root/.env}"
+compose_file="$repo_root/build/docker-compose.prod.yml"
 caddyfile="$deployment_dir/Caddyfile.prod"
 remote_host="${FSQR_DEPLOY_HOST:-}"
 
@@ -44,45 +44,121 @@ resolve_host() {
     printf '%s\n' "$output"
 }
 
-generate_env_file() {
-    local postgres_password
-    postgres_password="$(openssl rand -hex 32)"
-
-    umask 077
-    cat > "$env_file" <<EOF_ENV
-FSQR_IMAGE=${FSQR_IMAGE:-ghcr.io/chistopat/fsqr:prod}
-FSQR_DOMAIN=${FSQR_DOMAIN:-:80}
-
-POSTGRES_DB=${POSTGRES_DB:-fsqr}
-POSTGRES_USER=${POSTGRES_USER:-fsqr}
-POSTGRES_PASSWORD=$postgres_password
-
-FSQR_EMBEDDINGS_API_KEY=${FSQR_EMBEDDINGS_API_KEY:-tei-local}
-TEI_IMAGE=${TEI_IMAGE:-ghcr.io/huggingface/text-embeddings-inference:cpu-1.9}
-TEI_PLATFORM=${TEI_PLATFORM:-linux/amd64}
-TEI_MODEL_ID=${TEI_MODEL_ID:-intfloat/multilingual-e5-small}
-TEI_MODEL_REVISION=${TEI_MODEL_REVISION:-fd1525a9fd15316a2d503bf26ab031a61d056e98}
-TEI_SERVED_MODEL_NAME=${TEI_SERVED_MODEL_NAME:-intfloat/multilingual-e5-small}
-HF_TOKEN=${HF_TOKEN:-}
-
-WATCHTOWER_INTERVAL=${WATCHTOWER_INTERVAL:-300}
-GHCR_USERNAME=${GHCR_USERNAME:-}
-GHCR_TOKEN=${GHCR_TOKEN:-}
-EOF_ENV
+yaml_quote() {
+    local value="$1"
+    value="${value//\'/\'\'}"
+    printf "'%s'" "$value"
 }
 
-ensure_env_file() {
-    if [[ -f "$env_file" ]]; then
-        return
-    fi
+pg_conninfo_quote() {
+    local value="$1"
+    value="${value//\\/\\\\}"
+    value="${value//\'/\\\'}"
+    printf "'%s'" "$value"
+}
 
-    if ! command -v openssl >/dev/null 2>&1; then
-        echo "openssl is required to generate $env_file" >&2
+load_root_env() {
+    require_file "$env_file"
+
+    set -a
+    # shellcheck disable=SC1090
+    source "$env_file"
+    set +a
+}
+
+require_env() {
+    local name="$1"
+    if [[ -z "${!name:-}" ]]; then
+        echo "$name must be set in $env_file" >&2
+        exit 1
+    fi
+}
+
+generate_config_file() {
+    local path="$1"
+    local postgres_db="${POSTGRES_DB:-fsqr}"
+    local postgres_user="${POSTGRES_USER:-fsqr}"
+    local embeddings_api_key="${FSQR_EMBEDDINGS_API_KEY:-tei-local}"
+    local embeddings_model="${TEI_SERVED_MODEL_NAME:-intfloat/multilingual-e5-small}"
+    local database_dsn
+
+    database_dsn="host=postgres port=5432 dbname=$(pg_conninfo_quote "$postgres_db") user=$(pg_conninfo_quote "$postgres_user") password=$(pg_conninfo_quote "$POSTGRES_PASSWORD") sslmode=disable"
+
+    cat > "$path" <<EOF_CONFIG
+app:
+  name: fsqr
+  env: prod
+
+http:
+  addr: ":3000"
+
+logger:
+  level: info
+  encoding: json
+  development: false
+
+database:
+  dsn: $(yaml_quote "$database_dsn")
+  max_open_conns: 8
+  max_idle_conns: 4
+  conn_max_lifetime: 30m
+  conn_max_idle_time: 5m
+  connect_timeout: 5s
+
+embeddings:
+  base_url: "http://tei/v1"
+  api_key: $(yaml_quote "$embeddings_api_key")
+  model: $(yaml_quote "$embeddings_model")
+  timeout: 10s
+
+observability:
+  service_name: fsqr
+  metrics:
+    addr: "127.0.0.1:3001"
+    path: "/metrics"
+  tracing:
+    enabled: false
+    otlp_endpoint_url: ""
+    otlp_insecure: true
+EOF_CONFIG
+}
+
+write_env_var() {
+    local path="$1"
+    local name="$2"
+    local value="$3"
+
+    if [[ "$value" == *$'\n'* ]]; then
+        echo "$name contains a newline, which is not supported in Docker Compose env files" >&2
         exit 1
     fi
 
-    log "creating ignored deploy env: $env_file"
-    generate_env_file
+    value="${value//\\/\\\\}"
+    value="${value//\"/\\\"}"
+    value="${value//\$/\\$}"
+    value="${value//\`/\\\`}"
+
+    printf '%s=\"%s\"\n' "$name" "$value" >> "$path"
+}
+
+generate_compose_env_file() {
+    local path="$1"
+
+    : > "$path"
+    write_env_var "$path" FSQR_IMAGE "${FSQR_IMAGE:-ghcr.io/chistopat/fsqr:latest}"
+    write_env_var "$path" FSQR_DOMAIN "${FSQR_DOMAIN:-:80}"
+    write_env_var "$path" POSTGRES_DB "${POSTGRES_DB:-fsqr}"
+    write_env_var "$path" POSTGRES_USER "${POSTGRES_USER:-fsqr}"
+    write_env_var "$path" POSTGRES_PASSWORD "$POSTGRES_PASSWORD"
+    write_env_var "$path" TEI_IMAGE "${TEI_IMAGE:-ghcr.io/huggingface/text-embeddings-inference:cpu-1.9}"
+    write_env_var "$path" TEI_PLATFORM "${TEI_PLATFORM:-linux/amd64}"
+    write_env_var "$path" TEI_MODEL_ID "${TEI_MODEL_ID:-intfloat/multilingual-e5-small}"
+    write_env_var "$path" TEI_MODEL_REVISION "${TEI_MODEL_REVISION:-fd1525a9fd15316a2d503bf26ab031a61d056e98}"
+    write_env_var "$path" TEI_SERVED_MODEL_NAME "${TEI_SERVED_MODEL_NAME:-intfloat/multilingual-e5-small}"
+    write_env_var "$path" HF_TOKEN "${HF_TOKEN:-}"
+    write_env_var "$path" WATCHTOWER_INTERVAL "${WATCHTOWER_INTERVAL:-300}"
+    write_env_var "$path" GHCR_USERNAME "${GHCR_USERNAME:-}"
+    write_env_var "$path" GHCR_TOKEN "${GHCR_TOKEN:-}"
 }
 
 wait_for_ssh() {
@@ -102,8 +178,8 @@ wait_for_ssh() {
 require_file "$compose_file"
 require_file "$caddyfile"
 require_file "$ssh_key"
-ensure_env_file
-require_file "$env_file"
+load_root_env
+require_env POSTGRES_PASSWORD
 
 host="$(resolve_host)"
 target="$ssh_user@$host"
@@ -116,9 +192,11 @@ trap 'rm -rf "$tmpdir"' EXIT
 mkdir -p "$tmpdir/migrations"
 cp "$compose_file" "$tmpdir/compose.yml"
 cp "$caddyfile" "$tmpdir/Caddyfile"
-cp "$env_file" "$tmpdir/.env"
+generate_compose_env_file "$tmpdir/.env"
+generate_config_file "$tmpdir/config.yaml"
 cp "$repo_root"/migrations/*.sql "$tmpdir/migrations/"
 chmod 600 "$tmpdir/.env"
+chmod 600 "$tmpdir/config.yaml"
 
 log "waiting for ssh: $target"
 wait_for_ssh "$target"
@@ -153,6 +231,7 @@ done
 
 cd "$APP_DIR"
 chmod 600 .env
+chmod 600 config.yaml
 
 ghcr_user="$(sed -n 's/^GHCR_USERNAME=//p' .env | tail -n 1)"
 ghcr_token="$(sed -n 's/^GHCR_TOKEN=//p' .env | tail -n 1)"

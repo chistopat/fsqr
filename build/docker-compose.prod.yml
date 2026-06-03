@@ -18,16 +18,11 @@ services:
     restart: unless-stopped
 
   fsqr:
-    image: ${FSQR_IMAGE:-ghcr.io/chistopat/fsqr:prod}
+    image: ${FSQR_IMAGE:-ghcr.io/chistopat/fsqr:latest}
     environment:
-      FSQR_ENV: prod
-      FSQR_HTTP_ADDR: ":3000"
-      FSQR_METRICS_ADDR: "127.0.0.1:3001"
-      FSQR_DATABASE_DSN: "postgres://${POSTGRES_USER:-fsqr}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-fsqr}?sslmode=disable"
-      FSQR_EMBEDDINGS_BASE_URL: "http://tei/v1"
-      FSQR_EMBEDDINGS_API_KEY: ${FSQR_EMBEDDINGS_API_KEY:-tei-local}
-      FSQR_EMBEDDINGS_MODEL: ${TEI_SERVED_MODEL_NAME:-intfloat/multilingual-e5-small}
-      FSQR_TRACING_ENABLED: "false"
+      FSQR_CONFIG_FILE: /app/config/config.yaml
+    volumes:
+      - ./config.yaml:/app/config/config.yaml:ro
     depends_on:
       postgres:
         condition: service_healthy

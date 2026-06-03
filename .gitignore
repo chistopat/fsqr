@@ -13,7 +13,6 @@ bin/*
 !bin/.gitkeep
 
 deployment/.terraform/
-deployment/.env.deploy
 deployment/*.tfstate
 deployment/*.tfstate.*
 deployment/*.tfvars

@@ -161,7 +161,7 @@ places-import-smoke limit='1000': places-migrate
 categories-embed:
     cd etl && uv run python enricher/embed_categories.py
 
-deploy:
+cloud:
     #!/usr/bin/env bash
     set -euo pipefail
     token="${HCLOUD_TOKEN:-${HCLOUD_API_KEY:-}}"
@@ -179,3 +179,6 @@ deploy:
 
 bootstrap:
     ./scripts/deploy/bootstrap.sh
+
+migrate:
+    ./scripts/deploy/migrate.sh
