@@ -83,9 +83,7 @@ postgres-psql:
     {{compose}} exec postgres psql -U "${POSTGRES_USER:-fsqr}" -d "${POSTGRES_DB:-fsqr}"
 
 postgres-migrate:
-    {{postgres_psql}} < migrations/001_create_categories.sql
-    {{postgres_psql}} < migrations/002_create_places.sql
-    {{postgres_psql}} < migrations/003_create_places_fsq_place_id_index.sql
+    {{compose}} run --build --rm migrate
 
 test-db-create:
     #!/usr/bin/env bash
@@ -114,7 +112,7 @@ test-postgres-wait:
     exit 1
 
 test-migrate: test-db-create
-    {{e2e_compose}} run --rm migrate
+    {{e2e_compose}} run --build --rm migrate
 
 test-postgres-psql:
     {{e2e_compose}} exec postgres psql -U "${POSTGRES_USER:-fsqr}" -d "${TEST_POSTGRES_DB:-fsqr_test}"
@@ -191,4 +189,46 @@ bootstrap:
     ./scripts/deploy/bootstrap.sh
 
 migrate:
-    ./scripts/deploy/migrate.sh
+    #!/usr/bin/env bash
+    set -euo pipefail
+
+    app_dir="${FSQR_DEPLOY_DIR:-/opt/fsqr}"
+    ssh_user="${FSQR_DEPLOY_USER:-deploy}"
+    ssh_key="${FSQR_DEPLOY_SSH_KEY:-.ssh/fsqr_hcloud_ed25519}"
+    remote_host="${FSQR_DEPLOY_HOST:-}"
+
+    if [[ ! -f "$ssh_key" ]]; then
+        echo "required file is missing: $ssh_key" >&2
+        exit 1
+    fi
+
+    if [[ -z "$remote_host" ]]; then
+        if ! command -v tofu >/dev/null 2>&1; then
+            echo "tofu is required when FSQR_DEPLOY_HOST is not set" >&2
+            exit 1
+        fi
+        remote_host="$(tofu -chdir=deployment output -raw ipv4_address)"
+    fi
+
+    target="$ssh_user@$remote_host"
+    ssh_opts=(-i "$ssh_key" -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new)
+    rsync_ssh="ssh -i $ssh_key -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new"
+
+    ssh "${ssh_opts[@]}" "$target" APP_DIR="$app_dir" 'bash -s' <<'EOF'
+    set -euo pipefail
+    if [[ ! -f "$APP_DIR/.env" ]]; then
+        echo ".env is missing in $APP_DIR; run just bootstrap first" >&2
+        exit 1
+    fi
+    mkdir -p "$APP_DIR/migrations"
+    EOF
+
+    rsync -az -e "$rsync_ssh" build/docker-compose.prod.yml "$target:$app_dir/compose.yml"
+    rsync -az -e "$rsync_ssh" build/goose.Dockerfile "$target:$app_dir/goose.Dockerfile"
+    rsync -az --delete -e "$rsync_ssh" migrations/ "$target:$app_dir/migrations/"
+
+    ssh "${ssh_opts[@]}" "$target" APP_DIR="$app_dir" 'bash -s' <<'EOF'
+    set -euo pipefail
+    cd "$APP_DIR"
+    docker compose run --build --rm migrate
+    EOF

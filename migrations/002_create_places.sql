@@ -1,3 +1,4 @@
+-- +goose Up
 CREATE TABLE IF NOT EXISTS places (
     fsq_place_id TEXT NOT NULL,
     name TEXT,
@@ -29,3 +30,8 @@ CREATE EXTENSION IF NOT EXISTS btree_gist;
 
 CREATE INDEX IF NOT EXISTS places_location_category_gist_idx
     ON places USING gist ((point(lon, lat)), category_id);
+
+-- +goose Down
+DROP INDEX IF EXISTS places_location_category_gist_idx;
+DROP TABLE IF EXISTS places;
+DROP EXTENSION IF EXISTS btree_gist;

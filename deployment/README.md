@@ -37,6 +37,8 @@ TEI_MODEL_ID=intfloat/multilingual-e5-small
 TEI_MODEL_REVISION=fd1525a9fd15316a2d503bf26ab031a61d056e98
 TEI_SERVED_MODEL_NAME=intfloat/multilingual-e5-small
 HF_TOKEN=
+GOOSE_RUNNER_IMAGE=fsqr-goose:prod
+GOOSE_VERSION=v3.27.1
 WATCHTOWER_INTERVAL=300
 GHCR_USERNAME=
 GHCR_TOKEN=
@@ -105,8 +107,10 @@ Run migrations independently after bootstrap:
 just migrate
 ```
 
-The migrate command copies local `migrations/*.sql` to the server and runs the
-production Compose `migrate` service. Use it before relying on Watchtower for
+The migrate command syncs local `migrations/*.sql`, `goose.Dockerfile`, and the
+production Compose file to the server, then runs the production Compose
+`migrate` service. The service builds a pinned `pressly/goose` container and
+records applied migrations in Postgres. Use it before relying on Watchtower for
 schema-changing releases.
 
 Useful overrides:

@@ -10,6 +10,7 @@ ssh_user="${FSQR_DEPLOY_USER:-deploy}"
 ssh_key="${FSQR_DEPLOY_SSH_KEY:-$repo_root/.ssh/fsqr_hcloud_ed25519}"
 env_file="${FSQR_ROOT_ENV_FILE:-$repo_root/.env}"
 compose_file="$repo_root/build/docker-compose.prod.yml"
+goose_dockerfile="$repo_root/build/goose.Dockerfile"
 caddyfile="$deployment_dir/Caddyfile.prod"
 remote_host="${FSQR_DEPLOY_HOST:-}"
 
@@ -149,6 +150,8 @@ generate_compose_env_file() {
     write_env_var "$path" TEI_MODEL_REVISION "${TEI_MODEL_REVISION:-fd1525a9fd15316a2d503bf26ab031a61d056e98}"
     write_env_var "$path" TEI_SERVED_MODEL_NAME "${TEI_SERVED_MODEL_NAME:-intfloat/multilingual-e5-small}"
     write_env_var "$path" HF_TOKEN "${HF_TOKEN:-}"
+    write_env_var "$path" GOOSE_RUNNER_IMAGE "${GOOSE_RUNNER_IMAGE:-fsqr-goose:prod}"
+    write_env_var "$path" GOOSE_VERSION "${GOOSE_VERSION:-v3.27.1}"
     write_env_var "$path" WATCHTOWER_INTERVAL "${WATCHTOWER_INTERVAL:-300}"
     write_env_var "$path" GHCR_USERNAME "${GHCR_USERNAME:-}"
     write_env_var "$path" GHCR_TOKEN "${GHCR_TOKEN:-}"
@@ -169,6 +172,7 @@ wait_for_ssh() {
 }
 
 require_file "$compose_file"
+require_file "$goose_dockerfile"
 require_file "$caddyfile"
 require_file "$ssh_key"
 load_root_env
@@ -185,6 +189,7 @@ trap 'rm -rf "$tmpdir"' EXIT
 
 mkdir -p "$tmpdir/migrations"
 cp "$compose_file" "$tmpdir/compose.yml"
+cp "$goose_dockerfile" "$tmpdir/goose.Dockerfile"
 cp "$caddyfile" "$tmpdir/Caddyfile"
 generate_compose_env_file "$tmpdir/.env"
 generate_config_file "$tmpdir/config.yaml"

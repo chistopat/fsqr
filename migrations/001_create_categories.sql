@@ -1,3 +1,4 @@
+-- +goose Up
 CREATE EXTENSION IF NOT EXISTS vector;
 
 CREATE TABLE IF NOT EXISTS categories (
@@ -21,3 +22,9 @@ CREATE INDEX IF NOT EXISTS categories_fts_idx
 CREATE INDEX IF NOT EXISTS categories_embedding_hnsw_idx
     ON categories USING hnsw (embedding vector_cosine_ops)
     WITH (m = 16, ef_construction = 64);
+
+-- +goose Down
+DROP INDEX IF EXISTS categories_embedding_hnsw_idx;
+DROP INDEX IF EXISTS categories_fts_idx;
+DROP TABLE IF EXISTS categories;
+DROP EXTENSION IF EXISTS vector;

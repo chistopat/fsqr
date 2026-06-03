@@ -69,7 +69,12 @@ services:
     restart: unless-stopped
 
   migrate:
-    image: ${POSTGRES_IMAGE:-pgvector/pgvector:pg18-bookworm}
+    image: ${GOOSE_RUNNER_IMAGE:-fsqr-goose:prod}
+    build:
+      context: .
+      dockerfile: goose.Dockerfile
+      args:
+        GOOSE_VERSION: ${GOOSE_VERSION:-v3.27.1}
     depends_on:
       postgres:
         condition: service_healthy
@@ -85,9 +90,9 @@ services:
       - -c
     command:
       - |
-        psql -v ON_ERROR_STOP=1 -f /migrations/001_create_categories.sql
-        psql -v ON_ERROR_STOP=1 -f /migrations/002_create_places.sql
-        psql -v ON_ERROR_STOP=1 -f /migrations/003_create_places_fsq_place_id_index.sql
+        set -eu
+        dsn="postgres://$${PGUSER}:$${PGPASSWORD}@$${PGHOST}:5432/$${PGDATABASE}?sslmode=disable"
+        exec goose -dir /migrations postgres "$${dsn}" up
 
   watchtower:
     image: ${WATCHTOWER_IMAGE:-containrrr/watchtower:latest}

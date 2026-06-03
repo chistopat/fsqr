@@ -45,6 +45,32 @@ services:
       retries: 5
     restart: unless-stopped
 
+  migrate:
+    image: ${GOOSE_RUNNER_IMAGE:-fsqr-goose:local}
+    build:
+      context: .
+      dockerfile: goose.Dockerfile
+      args:
+        GOOSE_VERSION: ${GOOSE_VERSION:-v3.27.1}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      PGHOST: postgres
+      PGUSER: ${POSTGRES_USER:-fsqr}
+      PGPASSWORD: ${POSTGRES_PASSWORD:-fsqr}
+      PGDATABASE: ${POSTGRES_DB:-fsqr}
+    volumes:
+      - ../migrations:/migrations:ro
+    entrypoint:
+      - /bin/sh
+      - -c
+    command:
+      - |
+        set -eu
+        dsn="postgres://$${PGUSER}:$${PGPASSWORD}@$${PGHOST}:5432/$${PGDATABASE}?sslmode=disable"
+        exec goose -dir /migrations postgres "$${dsn}" up
+
   tei:
     image: "${TEI_IMAGE:-fsqr/tei:cpu-arm64}"
     platform: linux/arm64
