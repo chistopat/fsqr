@@ -68,6 +68,13 @@ variable "app_domain" {
   type        = string
 }
 
+variable "grafana_domain" {
+  description = "Public hostname for Grafana. Defaults to grafana.<app_domain> and must be inside dns_zone_name."
+  type        = string
+  default     = null
+  nullable    = true
+}
+
 variable "dns_ttl" {
   description = "TTL in seconds for fsqr DNS records."
   type        = number

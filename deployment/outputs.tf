@@ -28,6 +28,16 @@ output "app_base_url" {
   value       = "https://${local.app_domain_normalized}"
 }
 
+output "grafana_domain" {
+  description = "Public Grafana hostname managed by Hetzner DNS."
+  value       = local.grafana_domain_normalized
+}
+
+output "grafana_base_url" {
+  description = "Public Grafana base URL."
+  value       = "https://${local.grafana_domain_normalized}"
+}
+
 output "dns_zone_nameservers" {
   description = "Authoritative Hetzner nameservers that must be delegated at the domain registrar."
   value       = hcloud_zone.primary.authoritative_nameservers.assigned

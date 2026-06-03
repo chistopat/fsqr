@@ -10,8 +10,8 @@ ssh_user="${FSQR_DEPLOY_USER:-deploy}"
 ssh_key="${FSQR_DEPLOY_SSH_KEY:-$repo_root/.ssh/fsqr_hcloud_ed25519}"
 env_file="${FSQR_ROOT_ENV_FILE:-$repo_root/.env}"
 compose_file="$repo_root/build/docker-compose.prod.yml"
-goose_dockerfile="$repo_root/build/goose.Dockerfile"
 caddyfile="$deployment_dir/Caddyfile.prod"
+observability_dir="$repo_root/observability"
 remote_host="${FSQR_DEPLOY_HOST:-}"
 
 log() {
@@ -108,7 +108,7 @@ embeddings:
 observability:
   service_name: fsqr
   metrics:
-    addr: "127.0.0.1:3001"
+    addr: ":3001"
     path: "/metrics"
   tracing:
     enabled: false
@@ -141,6 +141,7 @@ generate_compose_env_file() {
     : > "$path"
     write_env_var "$path" FSQR_IMAGE "${FSQR_IMAGE:-ghcr.io/chistopat/fsqr:latest}"
     write_env_var "$path" FSQR_DOMAIN "$FSQR_DOMAIN"
+    write_env_var "$path" GRAFANA_DOMAIN "${GRAFANA_DOMAIN:-grafana.$FSQR_DOMAIN}"
     write_env_var "$path" POSTGRES_DB "${POSTGRES_DB:-fsqr}"
     write_env_var "$path" POSTGRES_USER "${POSTGRES_USER:-fsqr}"
     write_env_var "$path" POSTGRES_PASSWORD "$POSTGRES_PASSWORD"
@@ -150,7 +151,11 @@ generate_compose_env_file() {
     write_env_var "$path" TEI_MODEL_REVISION "${TEI_MODEL_REVISION:-fd1525a9fd15316a2d503bf26ab031a61d056e98}"
     write_env_var "$path" TEI_SERVED_MODEL_NAME "${TEI_SERVED_MODEL_NAME:-intfloat/multilingual-e5-small}"
     write_env_var "$path" HF_TOKEN "${HF_TOKEN:-}"
-    write_env_var "$path" GOOSE_RUNNER_IMAGE "${GOOSE_RUNNER_IMAGE:-fsqr-goose:prod}"
+    write_env_var "$path" PROMETHEUS_IMAGE "${PROMETHEUS_IMAGE:-prom/prometheus:latest}"
+    write_env_var "$path" GRAFANA_IMAGE "${GRAFANA_IMAGE:-grafana/grafana:latest}"
+    write_env_var "$path" GRAFANA_ADMIN_USER "${GRAFANA_ADMIN_USER:-admin}"
+    write_env_var "$path" GRAFANA_ADMIN_PASSWORD "$GRAFANA_ADMIN_PASSWORD"
+    write_env_var "$path" GOOSE_RUNNER_IMAGE "${GOOSE_RUNNER_IMAGE:-ghcr.io/chistopat/fsqr-goose:v3.27.1}"
     write_env_var "$path" GOOSE_VERSION "${GOOSE_VERSION:-v3.27.1}"
     write_env_var "$path" WATCHTOWER_INTERVAL "${WATCHTOWER_INTERVAL:-300}"
     write_env_var "$path" GHCR_USERNAME "${GHCR_USERNAME:-}"
@@ -172,12 +177,12 @@ wait_for_ssh() {
 }
 
 require_file "$compose_file"
-require_file "$goose_dockerfile"
 require_file "$caddyfile"
 require_file "$ssh_key"
 load_root_env
 require_env POSTGRES_PASSWORD
 require_env FSQR_DOMAIN
+require_env GRAFANA_ADMIN_PASSWORD
 
 host="$(resolve_host)"
 target="$ssh_user@$host"
@@ -189,8 +194,8 @@ trap 'rm -rf "$tmpdir"' EXIT
 
 mkdir -p "$tmpdir/migrations"
 cp "$compose_file" "$tmpdir/compose.yml"
-cp "$goose_dockerfile" "$tmpdir/goose.Dockerfile"
 cp "$caddyfile" "$tmpdir/Caddyfile"
+cp -R "$observability_dir" "$tmpdir/observability"
 generate_compose_env_file "$tmpdir/.env"
 generate_config_file "$tmpdir/config.yaml"
 cp "$repo_root"/migrations/*.sql "$tmpdir/migrations/"
@@ -244,9 +249,9 @@ if [[ -n "$ghcr_user" && -n "$ghcr_token" ]]; then
     printf '%s' "$ghcr_token" | docker login ghcr.io -u "$ghcr_user" --password-stdin >/dev/null
 fi
 
-docker compose pull
+docker compose pull fsqr caddy postgres tei prometheus grafana watchtower
 docker compose up -d postgres tei
-docker compose up -d --remove-orphans fsqr caddy watchtower
+docker compose up -d --remove-orphans fsqr prometheus grafana caddy watchtower
 EOF_REMOTE
 
 log "bootstrap completed: ssh $target, app dir $app_dir"

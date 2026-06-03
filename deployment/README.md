@@ -8,7 +8,7 @@ OpenTofu configuration for one Hetzner Cloud VM in Helsinki with Docker CE prein
 - Static Primary IPv4: `auto_delete = false` so DNS can keep using the same address after VM replacement.
 - Server: `cpx42` in `hel1` Helsinki, image `docker-ce`, IPv4 enabled, IPv6 disabled.
 - DNS zone: primary Hetzner DNS zone for `kailas.cloud`.
-- DNS record: `A` RRSet for `fsqr.kailas.cloud` pointing at the static Primary IPv4.
+- DNS records: `A` RRSets for `fsqr.kailas.cloud` and Grafana pointing at the static Primary IPv4.
 - SSH key: uploaded from `../.ssh/fsqr_hcloud_ed25519.pub`.
 - Cloud-init: creates non-root `deploy` user, disables password auth and root SSH, verifies Docker Compose.
 
@@ -27,6 +27,7 @@ Optional root `.env` values used by Compose/bootstrap:
 ```env
 FSQR_IMAGE=ghcr.io/chistopat/fsqr:latest
 FSQR_DOMAIN=fsqr.kailas.cloud
+GRAFANA_DOMAIN=grafana.fsqr.kailas.cloud
 FSQR_DNS_ZONE=kailas.cloud
 POSTGRES_DB=fsqr
 POSTGRES_USER=fsqr
@@ -37,7 +38,11 @@ TEI_MODEL_ID=intfloat/multilingual-e5-small
 TEI_MODEL_REVISION=fd1525a9fd15316a2d503bf26ab031a61d056e98
 TEI_SERVED_MODEL_NAME=intfloat/multilingual-e5-small
 HF_TOKEN=
-GOOSE_RUNNER_IMAGE=fsqr-goose:prod
+PROMETHEUS_IMAGE=prom/prometheus:latest
+GRAFANA_IMAGE=grafana/grafana:latest
+GRAFANA_ADMIN_USER=admin
+GRAFANA_ADMIN_PASSWORD=...
+GOOSE_RUNNER_IMAGE=ghcr.io/chistopat/fsqr-goose:v3.27.1
 GOOSE_VERSION=v3.27.1
 WATCHTOWER_INTERVAL=300
 GHCR_USERNAME=
@@ -69,9 +74,10 @@ tofu apply
 ```
 
 After apply, use the output SSH command. `just cloud` maps root `.env`
-`FSQR_DOMAIN` to Terraform `app_domain` and `FSQR_DNS_ZONE` to Terraform
-`dns_zone_name`. The `app_domain` output is managed as an `A` record in Hetzner
-DNS and points to the `ipv4_address` output.
+`FSQR_DOMAIN` to Terraform `app_domain`, `GRAFANA_DOMAIN` to Terraform
+`grafana_domain`, and `FSQR_DNS_ZONE` to Terraform `dns_zone_name`. The
+`app_domain` and `grafana_domain` outputs are managed as `A` records in Hetzner
+DNS and point to the `ipv4_address` output.
 
 If `kailas.cloud` is not delegated to Hetzner nameservers yet, update the
 registrar to use the `dns_zone_nameservers` output. Terraform can manage the
@@ -93,7 +99,7 @@ The bootstrap command:
 - Reads root `.env` as the only local secret source.
 - Generates a minimal `/opt/fsqr/.env` for Docker Compose secrets/interpolation.
 - Generates `/opt/fsqr/config.yaml` for application settings.
-- Copies `build/docker-compose.prod.yml` as `/opt/fsqr/compose.yml`, plus `Caddyfile.prod` and SQL migrations.
+- Copies `build/docker-compose.prod.yml` as `/opt/fsqr/compose.yml`, plus `Caddyfile.prod`, observability provisioning, dashboards, and SQL migrations.
 - Optionally logs in to GHCR when `GHCR_USERNAME` and `GHCR_TOKEN` are present in root `.env`.
 - Runs `docker compose pull` and starts the stack. It does not apply migrations.
 
@@ -107,10 +113,10 @@ Run migrations independently after bootstrap:
 just migrate
 ```
 
-The migrate command syncs local `migrations/*.sql`, `goose.Dockerfile`, and the
-production Compose file to the server, then runs the production Compose
-`migrate` service. The service builds a pinned `pressly/goose` container and
-records applied migrations in Postgres. Use it before relying on Watchtower for
+The migrate command syncs local `migrations/*.sql` and the production Compose
+file to the server, then runs the production Compose `migrate` service. The
+service uses the pinned `ghcr.io/chistopat/fsqr-goose:v3.27.1` image and records
+applied migrations in Postgres. Use it before relying on Watchtower for
 schema-changing releases.
 
 Useful overrides:
@@ -122,10 +128,12 @@ FSQR_DEPLOY_DIR=/opt/fsqr just bootstrap
 FSQR_ROOT_ENV_FILE=.env just bootstrap
 ```
 
-Set `FSQR_DOMAIN=fsqr.kailas.cloud` in root `.env`. This is the single hostname
-source of truth for Terraform, bootstrap, Compose, and Caddy. Bootstrap writes
-that value to `/opt/fsqr/.env`; Caddy then serves HTTPS and obtains a
-certificate for the subdomain automatically once DNS resolves to the server.
+Set `FSQR_DOMAIN=fsqr.kailas.cloud` and
+`GRAFANA_DOMAIN=grafana.fsqr.kailas.cloud` in root `.env`. These are the
+hostname sources of truth for Terraform, bootstrap, Compose, and Caddy.
+Bootstrap writes those values to `/opt/fsqr/.env`; Caddy then serves HTTPS and
+obtains certificates for both subdomains automatically once DNS resolves to the
+server.
 
 ## SSH Access
 

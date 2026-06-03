@@ -15,9 +15,56 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  goose-image:
+    name: Build and Publish Goose Image
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      packages: write
+    env:
+      GOOSE_VERSION: v3.27.1
+      GOOSE_IMAGE: ghcr.io/${{ github.repository_owner }}/fsqr-goose
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+
+      - name: Login to GHCR
+        if: github.event_name != 'pull_request'
+        env:
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+
+      - name: Build and publish image
+        if: github.event_name != 'pull_request'
+        run: |
+          docker buildx build \
+            --platform linux/amd64 \
+            --build-arg "GOOSE_VERSION=${GOOSE_VERSION}" \
+            --label "org.opencontainers.image.source=https://github.com/${GITHUB_REPOSITORY}" \
+            --label "org.opencontainers.image.revision=${GITHUB_SHA}" \
+            --label "org.opencontainers.image.version=${GOOSE_VERSION}" \
+            -f build/goose.Dockerfile \
+            -t "${GOOSE_IMAGE}:${GOOSE_VERSION}" \
+            -t "${GOOSE_IMAGE}:latest" \
+            --push \
+            .
+
+      - name: Build image for pull requests
+        if: github.event_name == 'pull_request'
+        run: |
+          docker buildx build \
+            --platform linux/amd64 \
+            --build-arg "GOOSE_VERSION=${GOOSE_VERSION}" \
+            -f build/goose.Dockerfile \
+            -t "${GOOSE_IMAGE}:${GOOSE_VERSION}" \
+            --load \
+            .
+
   hygiene-unit-build:
     name: Hygiene, Unit Tests, Build
     runs-on: ubuntu-24.04
+    needs: goose-image
     timeout-minutes: 20
     steps:
       - name: Checkout code
@@ -68,6 +115,10 @@ jobs:
       TEI_IMAGE: ghcr.io/huggingface/text-embeddings-inference:cpu-1.9
       TEI_PLATFORM: linux/amd64
       TEI_DOCKERFILE: Dockerfile
+      GOOSE_RUNNER_IMAGE: ghcr.io/${{ github.repository_owner }}/fsqr-goose:v3.27.1
+    permissions:
+      contents: read
+      packages: read
     steps:
       - name: Checkout code
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
@@ -83,6 +134,11 @@ jobs:
         with:
           path: etl/.tmp/hf-cache
           key: tei-${{ runner.os }}-${{ env.TEI_MODEL_ID }}-${{ env.TEI_MODEL_REVISION }}
+
+      - name: Login to GHCR
+        env:
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
 
       - name: Pull runtime images
         run: |

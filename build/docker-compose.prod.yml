@@ -6,11 +6,14 @@ services:
     depends_on:
       fsqr:
         condition: service_started
+      grafana:
+        condition: service_started
     ports:
       - "80:80"
       - "443:443"
     environment:
       FSQR_DOMAIN: ${FSQR_DOMAIN:?FSQR_DOMAIN must be set}
+      GRAFANA_DOMAIN: ${GRAFANA_DOMAIN:?GRAFANA_DOMAIN must be set}
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy-data:/data
@@ -68,13 +71,40 @@ services:
       HF_TOKEN: ${HF_TOKEN:-}
     restart: unless-stopped
 
+  prometheus:
+    image: ${PROMETHEUS_IMAGE:-prom/prometheus:latest}
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --web.enable-lifecycle
+    volumes:
+      - ./observability/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    depends_on:
+      fsqr:
+        condition: service_started
+    restart: unless-stopped
+
+  grafana:
+    image: ${GRAFANA_IMAGE:-grafana/grafana:latest}
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?GRAFANA_ADMIN_PASSWORD must be set}
+      GF_SERVER_DOMAIN: ${GRAFANA_DOMAIN:?GRAFANA_DOMAIN must be set}
+      GF_SERVER_ROOT_URL: https://${GRAFANA_DOMAIN:?GRAFANA_DOMAIN must be set}/
+      GF_USERS_DEFAULT_THEME: light
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./observability/grafana/provisioning/datasources:/etc/grafana/provisioning/datasources:ro
+      - ./observability/grafana/provisioning/dashboards:/etc/grafana/provisioning/dashboards:ro
+      - ./observability/grafana/dashboards:/etc/grafana/dashboards:ro
+    depends_on:
+      prometheus:
+        condition: service_started
+    restart: unless-stopped
+
   migrate:
-    image: ${GOOSE_RUNNER_IMAGE:-fsqr-goose:prod}
-    build:
-      context: .
-      dockerfile: goose.Dockerfile
-      args:
-        GOOSE_VERSION: ${GOOSE_VERSION:-v3.27.1}
+    image: ${GOOSE_RUNNER_IMAGE:-ghcr.io/chistopat/fsqr-goose:v3.27.1}
     depends_on:
       postgres:
         condition: service_healthy
@@ -113,3 +143,5 @@ volumes:
   caddy-config:
   postgres-data:
   hf-cache:
+  prometheus-data:
+  grafana-data:

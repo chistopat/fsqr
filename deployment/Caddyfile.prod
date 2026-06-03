@@ -2,3 +2,8 @@
     encode zstd gzip
     reverse_proxy fsqr:3000
 }
+
+{$GRAFANA_DOMAIN} {
+    encode zstd gzip
+    reverse_proxy grafana:3000
+}

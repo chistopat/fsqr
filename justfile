@@ -179,6 +179,7 @@ cloud:
     export HCLOUD_TOKEN="$token"
     export TF_VAR_hcloud_token="$token"
     export TF_VAR_app_domain="$FSQR_DOMAIN"
+    export TF_VAR_grafana_domain="${GRAFANA_DOMAIN:-grafana.$FSQR_DOMAIN}"
     export TF_VAR_dns_zone_name="$FSQR_DNS_ZONE"
 
     cd deployment
@@ -224,11 +225,10 @@ migrate:
     EOF
 
     rsync -az -e "$rsync_ssh" build/docker-compose.prod.yml "$target:$app_dir/compose.yml"
-    rsync -az -e "$rsync_ssh" build/goose.Dockerfile "$target:$app_dir/goose.Dockerfile"
     rsync -az --delete -e "$rsync_ssh" migrations/ "$target:$app_dir/migrations/"
 
     ssh "${ssh_opts[@]}" "$target" APP_DIR="$app_dir" 'bash -s' <<'EOF'
     set -euo pipefail
     cd "$APP_DIR"
-    docker compose run --build --rm migrate
+    docker compose run --rm migrate
     EOF
