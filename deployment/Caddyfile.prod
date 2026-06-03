@@ -1,0 +1,4 @@
+{$FSQR_DOMAIN} {
+    encode zstd gzip
+    reverse_proxy fsqr:3000
+}

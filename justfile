@@ -160,3 +160,22 @@ places-import-smoke limit='1000': places-migrate
 
 categories-embed:
     cd etl && uv run python enricher/embed_categories.py
+
+deploy:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    token="${HCLOUD_TOKEN:-${HCLOUD_API_KEY:-}}"
+    if [[ -z "$token" ]]; then
+        echo "HCLOUD_TOKEN or HCLOUD_API_KEY must be set" >&2
+        exit 1
+    fi
+
+    export HCLOUD_TOKEN="$token"
+    export TF_VAR_hcloud_token="$token"
+
+    cd deployment
+    tofu init -input=false
+    tofu apply
+
+bootstrap:
+    ./scripts/deploy/bootstrap.sh

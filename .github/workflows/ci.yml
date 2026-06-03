@@ -200,6 +200,8 @@ jobs:
           VERSION: ${{ steps.version.outputs.version }}
         run: |
           docker push "${IMAGE}:${VERSION}"
+          docker tag "${IMAGE}:${VERSION}" "${IMAGE}:prod"
+          docker push "${IMAGE}:prod"
 
       - name: Create GitHub release
         env:

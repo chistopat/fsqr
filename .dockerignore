@@ -1,8 +1,15 @@
 .git
 .idea
 .env
+.ssh
 .tmp
 .venv
+deployment/.terraform
+deployment/.env.deploy
+deployment/*.tfstate
+deployment/*.tfstate.*
+deployment/*.tfvars
+deployment/*.tfvars.json
 
 bin/
 etl/

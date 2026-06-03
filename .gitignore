@@ -1,6 +1,7 @@
 .venv
 .idea
 .env
+.ssh/
 .tmp
 __pycache__/
 *.py[cod]
@@ -10,3 +11,10 @@ etl/
 
 bin/*
 !bin/.gitkeep
+
+deployment/.terraform/
+deployment/.env.deploy
+deployment/*.tfstate
+deployment/*.tfstate.*
+deployment/*.tfvars
+deployment/*.tfvars.json

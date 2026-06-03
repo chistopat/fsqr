@@ -1,0 +1,33 @@
+#cloud-config
+users:
+  - name: ${admin_user}
+    groups:
+      - sudo
+    shell: /bin/bash
+    sudo:
+      - ALL=(ALL) NOPASSWD:ALL
+    ssh_authorized_keys:
+      - "${ssh_public_key}"
+
+ssh_pwauth: false
+disable_root: true
+package_update: false
+package_upgrade: false
+
+write_files:
+  - path: /etc/ssh/sshd_config.d/90-fsqr-hardening.conf
+    owner: root:root
+    permissions: "0644"
+    content: |
+      PermitRootLogin no
+      PasswordAuthentication no
+      KbdInteractiveAuthentication no
+      X11Forwarding no
+
+runcmd:
+  - groupadd -f docker
+  - usermod -aG docker ${admin_user}
+  - systemctl enable --now docker
+  - docker --version
+  - docker compose version
+  - systemctl reload ssh || systemctl reload ssh.service || true

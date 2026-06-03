@@ -1,0 +1,115 @@
+name: fsqr-prod
+
+services:
+  caddy:
+    image: ${CADDY_IMAGE:-caddy:2-alpine}
+    depends_on:
+      fsqr:
+        condition: service_started
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      FSQR_DOMAIN: ${FSQR_DOMAIN:-:80}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    restart: unless-stopped
+
+  fsqr:
+    image: ${FSQR_IMAGE:-ghcr.io/chistopat/fsqr:prod}
+    environment:
+      FSQR_ENV: prod
+      FSQR_HTTP_ADDR: ":3000"
+      FSQR_METRICS_ADDR: "127.0.0.1:3001"
+      FSQR_DATABASE_DSN: "postgres://${POSTGRES_USER:-fsqr}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-fsqr}?sslmode=disable"
+      FSQR_EMBEDDINGS_BASE_URL: "http://tei/v1"
+      FSQR_EMBEDDINGS_API_KEY: ${FSQR_EMBEDDINGS_API_KEY:-tei-local}
+      FSQR_EMBEDDINGS_MODEL: ${TEI_SERVED_MODEL_NAME:-intfloat/multilingual-e5-small}
+      FSQR_TRACING_ENABLED: "false"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      tei:
+        condition: service_started
+    labels:
+      com.centurylinklabs.watchtower.enable: "true"
+    restart: unless-stopped
+
+  postgres:
+    image: ${POSTGRES_IMAGE:-pgvector/pgvector:pg18-bookworm}
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-fsqr}
+      POSTGRES_USER: ${POSTGRES_USER:-fsqr}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$${POSTGRES_USER}\" -d \"$${POSTGRES_DB}\""]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  tei:
+    image: ${TEI_IMAGE:-ghcr.io/huggingface/text-embeddings-inference:cpu-1.9}
+    platform: ${TEI_PLATFORM:-linux/amd64}
+    command:
+      - --model-id
+      - ${TEI_MODEL_ID:-intfloat/multilingual-e5-small}
+      - --revision
+      - ${TEI_MODEL_REVISION:-fd1525a9fd15316a2d503bf26ab031a61d056e98}
+      - --served-model-name
+      - ${TEI_SERVED_MODEL_NAME:-intfloat/multilingual-e5-small}
+      - --hostname
+      - 0.0.0.0
+      - --port
+      - "80"
+    volumes:
+      - hf-cache:/data
+    environment:
+      HUGGINGFACE_HUB_CACHE: /data
+      HF_TOKEN: ${HF_TOKEN:-}
+    restart: unless-stopped
+
+  migrate:
+    image: ${POSTGRES_IMAGE:-pgvector/pgvector:pg18-bookworm}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      PGHOST: postgres
+      PGUSER: ${POSTGRES_USER:-fsqr}
+      PGPASSWORD: ${POSTGRES_PASSWORD}
+      PGDATABASE: ${POSTGRES_DB:-fsqr}
+    volumes:
+      - ./migrations:/migrations:ro
+    entrypoint:
+      - /bin/sh
+      - -c
+    command:
+      - |
+        psql -v ON_ERROR_STOP=1 -f /migrations/001_create_categories.sql
+        psql -v ON_ERROR_STOP=1 -f /migrations/002_create_places.sql
+        psql -v ON_ERROR_STOP=1 -f /migrations/003_create_places_fsq_place_id_index.sql
+
+  watchtower:
+    image: ${WATCHTOWER_IMAGE:-containrrr/watchtower:latest}
+    command:
+      - --label-enable
+      - --cleanup
+      - --interval
+      - ${WATCHTOWER_INTERVAL:-300}
+    environment:
+      REPO_USER: ${GHCR_USERNAME:-}
+      REPO_PASS: ${GHCR_TOKEN:-}
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    restart: unless-stopped
+
+volumes:
+  caddy-data:
+  caddy-config:
+  postgres-data:
+  hf-cache:
