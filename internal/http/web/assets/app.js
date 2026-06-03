@@ -1,10 +1,11 @@
 (() => {
-  const defaultCenter = { lat: 34.772013, lon: 32.429736, zoom: 13 };
+  const fallbackCenter = { lat: 34.790000, lon: 32.460000, zoom: 11 };
   const maxSearchDistanceMeters = 500000;
   const minSearchDistanceMeters = 500;
   const searchLimit = 128;
   const defaultMapboxStyle = "mapbox/light-v11";
   const webConfig = window.FSQR_CONFIG || {};
+  const defaultCenter = normalizeDefaultCenter(webConfig.defaultCenter);
 
   const queryInput = document.getElementById("query");
   const form = document.getElementById("search-form");
@@ -109,6 +110,16 @@
     return Number.isFinite(value) ? value : fallback;
   }
 
+  function normalizeDefaultCenter(rawCenter) {
+    const center = rawCenter && typeof rawCenter === "object" ? rawCenter : {};
+
+    return {
+      lat: clampLatitudeValue(finiteNumber(center.lat, fallbackCenter.lat), fallbackCenter.lat),
+      lon: wrapLongitudeValue(finiteNumber(center.lon, fallbackCenter.lon), fallbackCenter.lon),
+      zoom: clampZoom(finiteNumber(center.zoom, fallbackCenter.zoom)),
+    };
+  }
+
   function normalizedCenter() {
     const center = map.getCenter();
 
@@ -119,21 +130,37 @@
   }
 
   function clampLatitude(value) {
+    return clampLatitudeValue(value, defaultCenter.lat);
+  }
+
+  function wrapLongitude(value) {
+    return wrapLongitudeValue(value, defaultCenter.lon);
+  }
+
+  function clampLatitudeValue(value, fallback) {
     if (!Number.isFinite(value)) {
-      return defaultCenter.lat;
+      return fallback;
     }
 
     return Math.max(-90, Math.min(90, value));
   }
 
-  function wrapLongitude(value) {
+  function wrapLongitudeValue(value, fallback) {
     if (!Number.isFinite(value)) {
-      return defaultCenter.lon;
+      return fallback;
     }
 
     const normalized = ((((value + 180) % 360) + 360) % 360) - 180;
 
     return normalized === -180 && value > 0 ? 180 : normalized;
+  }
+
+  function clampZoom(value) {
+    if (!Number.isFinite(value)) {
+      return fallbackCenter.zoom;
+    }
+
+    return Math.max(1, Math.min(22, value));
   }
 
   function createTileLayer() {

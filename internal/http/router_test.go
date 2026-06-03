@@ -453,7 +453,7 @@ func TestFrontendIndexReturnsAppShell(t *testing.T) {
 		"fsqr semantic geosearch",
 		"Human query:",
 		`src="/assets/config.js"`,
-		`src="/assets/app.js?v=mapbox-light-geo-wrap"`,
+		`src="/assets/app.js?v=paphos-wide-default"`,
 	} {
 		if !strings.Contains(string(body), expected) {
 			t.Fatalf("expected frontend body to contain %q", expected)
@@ -466,6 +466,9 @@ func TestFrontendConfigReturnsMapboxSettings(t *testing.T) {
 		WebConfig: &WebConfig{
 			MapboxAccessToken: "pk.test",
 			MapboxStyle:       "mapbox/dark-v11",
+			DefaultLat:        34.790000,
+			DefaultLon:        32.460000,
+			DefaultZoom:       11,
 		},
 	})
 
@@ -495,6 +498,7 @@ func TestFrontendConfigReturnsMapboxSettings(t *testing.T) {
 		"window.FSQR_CONFIG = ",
 		`"mapboxAccessToken":"pk.test"`,
 		`"mapboxStyle":"mapbox/dark-v11"`,
+		`"defaultCenter":{"lat":34.79,"lon":32.46,"zoom":11}`,
 	} {
 		if !strings.Contains(string(body), expected) {
 			t.Fatalf("expected frontend config body to contain %q", expected)

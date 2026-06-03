@@ -106,6 +106,9 @@ func main() {
 		WebConfig: &httpapi.WebConfig{
 			MapboxAccessToken: cfg.Web.MapboxAccessToken,
 			MapboxStyle:       cfg.Web.MapboxStyle,
+			DefaultLat:        cfg.Web.DefaultLat,
+			DefaultLon:        cfg.Web.DefaultLon,
+			DefaultZoom:       cfg.Web.DefaultZoom,
 		},
 	})
 	metricsApp := httpapi.NewMetricsRouter(metricsRegistry, cfg.Observability.Metrics.Path)

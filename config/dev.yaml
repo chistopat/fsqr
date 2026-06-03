@@ -27,6 +27,9 @@ embeddings:
 web:
   mapbox_access_token: ""
   mapbox_style: "mapbox/light-v11"
+  default_lat: 34.790000
+  default_lon: 32.460000
+  default_zoom: 11
 
 observability:
   service_name: fsqr

@@ -76,6 +76,9 @@ generate_config_file() {
     local embeddings_model="${TEI_SERVED_MODEL_NAME:-intfloat/multilingual-e5-small}"
     local mapbox_access_token="${FSQR_WEB_MAPBOX_ACCESS_TOKEN:-${MAPBOX_ACCESS_TOKEN:-${MAPBOX_API_KEY:-}}}"
     local mapbox_style="${FSQR_WEB_MAPBOX_STYLE:-${MAPBOX_STYLE:-mapbox/light-v11}}"
+    local web_default_lat="${FSQR_WEB_DEFAULT_LAT:-34.790000}"
+    local web_default_lon="${FSQR_WEB_DEFAULT_LON:-32.460000}"
+    local web_default_zoom="${FSQR_WEB_DEFAULT_ZOOM:-11}"
     local database_dsn
 
     database_dsn="host=postgres port=5432 dbname=$postgres_db user=$postgres_user password=$POSTGRES_PASSWORD sslmode=disable"
@@ -110,6 +113,9 @@ embeddings:
 web:
   mapbox_access_token: $(yaml_quote "$mapbox_access_token")
   mapbox_style: $(yaml_quote "$mapbox_style")
+  default_lat: $web_default_lat
+  default_lon: $web_default_lon
+  default_zoom: $web_default_zoom
 
 observability:
   service_name: fsqr

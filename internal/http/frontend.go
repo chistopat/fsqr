@@ -16,6 +16,9 @@ const (
 	frontendIndexPath  = "web/index.html"
 	frontendAssetsDir  = "web/assets"
 	defaultMapboxStyle = "mapbox/light-v11"
+	defaultMapLat      = 34.790000
+	defaultMapLon      = 32.460000
+	defaultMapZoom     = 11
 )
 
 //go:embed web/index.html web/assets/*
@@ -24,11 +27,21 @@ var frontendFiles embed.FS
 type WebConfig struct {
 	MapboxAccessToken string
 	MapboxStyle       string
+	DefaultLat        float64
+	DefaultLon        float64
+	DefaultZoom       float64
 }
 
 type frontendConfigPayload struct {
-	MapboxAccessToken string `json:"mapboxAccessToken"`
-	MapboxStyle       string `json:"mapboxStyle"`
+	MapboxAccessToken string           `json:"mapboxAccessToken"`
+	MapboxStyle       string           `json:"mapboxStyle"`
+	DefaultCenter     mapCenterPayload `json:"defaultCenter"`
+}
+
+type mapCenterPayload struct {
+	Lat  float64 `json:"lat"`
+	Lon  float64 `json:"lon"`
+	Zoom float64 `json:"zoom"`
 }
 
 func registerFrontend(app *fiber.App, webConfig WebConfig) {
@@ -38,11 +51,31 @@ func registerFrontend(app *fiber.App, webConfig WebConfig) {
 }
 
 func webConfigOrDefault(webConfig *WebConfig) WebConfig {
+	cfg := WebConfig{
+		MapboxStyle: defaultMapboxStyle,
+		DefaultLat:  defaultMapLat,
+		DefaultLon:  defaultMapLon,
+		DefaultZoom: defaultMapZoom,
+	}
 	if webConfig == nil {
-		return WebConfig{}
+		return cfg
 	}
 
-	return *webConfig
+	cfg.MapboxAccessToken = webConfig.MapboxAccessToken
+	if webConfig.MapboxStyle != "" {
+		cfg.MapboxStyle = webConfig.MapboxStyle
+	}
+	if webConfig.DefaultLat != 0 {
+		cfg.DefaultLat = webConfig.DefaultLat
+	}
+	if webConfig.DefaultLon != 0 {
+		cfg.DefaultLon = webConfig.DefaultLon
+	}
+	if webConfig.DefaultZoom != 0 {
+		cfg.DefaultZoom = webConfig.DefaultZoom
+	}
+
+	return cfg
 }
 
 func serveFrontendIndex(ctx *fiber.Ctx) error {
@@ -62,12 +95,16 @@ func serveFrontendAsset(ctx *fiber.Ctx) error {
 }
 
 func serveFrontendConfig(webConfig WebConfig) fiber.Handler {
-	if webConfig.MapboxStyle == "" {
-		webConfig.MapboxStyle = defaultMapboxStyle
-	}
-
 	return func(ctx *fiber.Ctx) error {
-		data, err := json.Marshal(frontendConfigPayload(webConfig))
+		data, err := json.Marshal(frontendConfigPayload{
+			MapboxAccessToken: webConfig.MapboxAccessToken,
+			MapboxStyle:       webConfig.MapboxStyle,
+			DefaultCenter: mapCenterPayload{
+				Lat:  webConfig.DefaultLat,
+				Lon:  webConfig.DefaultLon,
+				Zoom: webConfig.DefaultZoom,
+			},
+		})
 		if err != nil {
 			return fmt.Errorf("encode frontend config: %w", err)
 		}

@@ -18,6 +18,9 @@ const (
 	defaultEmbeddingsTimeout      = 10 * time.Second
 	defaultDatabaseDSN            = "postgres://fsqr:fsqr@127.0.0.1:5432/fsqr?sslmode=disable"
 	defaultDatabaseConnectTimeout = 5 * time.Second
+	defaultWebMapLat              = 34.790000
+	defaultWebMapLon              = 32.460000
+	defaultWebMapZoom             = 11
 )
 
 type Config struct {
@@ -62,8 +65,11 @@ type EmbeddingsConfig struct {
 }
 
 type WebConfig struct {
-	MapboxAccessToken string `mapstructure:"mapbox_access_token"`
-	MapboxStyle       string `mapstructure:"mapbox_style"`
+	MapboxAccessToken string  `mapstructure:"mapbox_access_token"`
+	MapboxStyle       string  `mapstructure:"mapbox_style"`
+	DefaultLat        float64 `mapstructure:"default_lat"`
+	DefaultLon        float64 `mapstructure:"default_lon"`
+	DefaultZoom       float64 `mapstructure:"default_zoom"`
 }
 
 type ObservabilityConfig struct {
@@ -147,6 +153,9 @@ func setDefaults(loader *viper.Viper, env string) {
 	loader.SetDefault("observability.tracing.otlp_insecure", true)
 	loader.SetDefault("web.mapbox_access_token", "")
 	loader.SetDefault("web.mapbox_style", "mapbox/light-v11")
+	loader.SetDefault("web.default_lat", defaultWebMapLat)
+	loader.SetDefault("web.default_lon", defaultWebMapLon)
+	loader.SetDefault("web.default_zoom", defaultWebMapZoom)
 }
 
 func bindEnv(loader *viper.Viper) {
@@ -183,6 +192,9 @@ func bindEnv(loader *viper.Viper) {
 		"MAPBOX_API_KEY",
 	)
 	_ = loader.BindEnv("web.mapbox_style", "FSQR_WEB_MAPBOX_STYLE", "MAPBOX_STYLE")
+	_ = loader.BindEnv("web.default_lat", "FSQR_WEB_DEFAULT_LAT")
+	_ = loader.BindEnv("web.default_lon", "FSQR_WEB_DEFAULT_LON")
+	_ = loader.BindEnv("web.default_zoom", "FSQR_WEB_DEFAULT_ZOOM")
 }
 
 func firstNonEmpty(values ...string) string {
