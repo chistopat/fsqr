@@ -8,7 +8,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
-  <link rel="stylesheet" href="/assets/styles.css?v=mapbox-light-geo-wrap">
+  <link rel="stylesheet" href="/assets/styles.css?v=credits-footer">
 </head>
 <body>
   <div class="ribbon">fsqr semantic geosearch: human intent in, map-ready places out</div>
@@ -57,6 +57,29 @@
       <ol id="results" class="result-list"></ol>
     </aside>
   </main>
+
+  <footer class="credit-footer" aria-label="Project credits">
+    <a class="credit-badge" href="https://www.postgresql.org/" target="_blank" rel="noopener noreferrer">
+      <span>powered by</span>
+      PostgreSQL
+    </a>
+    <a class="credit-badge" href="https://opensource.foursquare.com/os-places/" target="_blank" rel="noopener noreferrer">
+      <span>data</span>
+      Foursquare OS Places
+    </a>
+    <a class="credit-badge" href="https://overturemaps.org/" target="_blank" rel="noopener noreferrer">
+      <span>data</span>
+      Overture Maps
+    </a>
+    <a class="credit-badge" href="https://www.hetzner.com/" target="_blank" rel="noopener noreferrer">
+      <span>hosted by</span>
+      Hetzner
+    </a>
+    <a class="credit-badge" href="https://www.mapbox.com/" target="_blank" rel="noopener noreferrer">
+      <span>maps by</span>
+      Mapbox
+    </a>
+  </footer>
 
   <template id="result-row-template">
     <li class="result-row">

@@ -10,6 +10,8 @@
   --green: #8effb2;
   --danger: #ff705c;
   --shadow: 0 20px 80px rgb(0 0 0 / 45%);
+  --chrome-height: 194px;
+  --footer-height: 58px;
   color-scheme: dark;
   font-family: "IBM Plex Mono", "Courier New", monospace;
 }
@@ -215,7 +217,7 @@ button {
 }
 
 .workspace {
-  height: calc(100vh - 194px);
+  height: calc(100vh - var(--chrome-height) - var(--footer-height));
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(320px, 25vw);
   min-height: 360px;
@@ -378,6 +380,51 @@ button {
   color: #202020;
 }
 
+.credit-footer {
+  min-height: var(--footer-height);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 14px;
+  border-top: 2px solid #000;
+  background:
+    linear-gradient(90deg, rgb(255 106 0 / 12%), transparent 28%),
+    #111414;
+  box-shadow: 0 -12px 40px rgb(0 0 0 / 25%);
+  overflow-x: auto;
+}
+
+.credit-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 38px;
+  padding: 6px 12px;
+  color: var(--ink);
+  background: #242626;
+  border: 3px solid #000;
+  text-decoration: none;
+  white-space: nowrap;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.credit-badge span {
+  color: var(--signal-hot);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.credit-badge:hover {
+  color: #070707;
+  background: var(--signal-hot);
+}
+
+.credit-badge:hover span {
+  color: #070707;
+}
+
 @keyframes pulse {
   from { transform: scale(0.88); }
   to { transform: scale(1.18); }
@@ -424,5 +471,15 @@ button {
     min-height: 42vh;
     border-left: 0;
     border-top: 2px solid #000;
+  }
+
+  .credit-footer {
+    flex-wrap: wrap;
+    min-height: 0;
+  }
+
+  .credit-badge {
+    flex: 1 1 220px;
+    justify-content: center;
   }
 }
