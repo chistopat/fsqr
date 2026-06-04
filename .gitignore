@@ -7,7 +7,10 @@ __pycache__/
 *.py[cod]
 
 docs/
-etl/
+etl/*
+!etl/scripts/
+etl/scripts/*
+!etl/scripts/import_overture_divisions.py
 
 bin/*
 !bin/.gitkeep

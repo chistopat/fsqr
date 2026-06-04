@@ -156,6 +156,14 @@ places-import parquet_glob='data/hf/release/dt=2026-05-14/places/parquet/*.parqu
 places-import-smoke limit='1000': places-migrate
     cd etl && uv run python scripts/import_places.py --limit {{limit}} --truncate --rebuild-indexes --allow-unknown-categories
 
+geo-features-migrate: postgres-migrate
+
+geo-features-import release='2026-05-20.0': geo-features-migrate
+    cd etl && uv run python scripts/import_overture_divisions.py --release '{{release}}' --truncate
+
+geo-features-import-smoke release='2026-05-20.0' limit='1000': geo-features-migrate
+    cd etl && uv run python scripts/import_overture_divisions.py --release '{{release}}' --limit {{limit}} --truncate --no-progress
+
 categories-embed:
     cd etl && uv run python enricher/embed_categories.py
 
