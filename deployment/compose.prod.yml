@@ -6,6 +6,8 @@ services:
     depends_on:
       fsqr:
         condition: service_started
+      hoppify:
+        condition: service_started
       grafana:
         condition: service_started
     ports:
@@ -13,6 +15,7 @@ services:
       - "443:443"
     environment:
       FSQR_DOMAIN: ${FSQR_DOMAIN:?FSQR_DOMAIN must be set}
+      HOPPIFY_DOMAIN: ${HOPPIFY_DOMAIN:?HOPPIFY_DOMAIN must be set}
       GRAFANA_DOMAIN: ${GRAFANA_DOMAIN:?GRAFANA_DOMAIN must be set}
     volumes:
       - ../gateway/Caddyfile.prod:/etc/caddy/Caddyfile:ro
@@ -31,6 +34,15 @@ services:
         condition: service_healthy
       tei:
         condition: service_started
+    labels:
+      com.centurylinklabs.watchtower.enable: "true"
+    restart: unless-stopped
+
+  hoppify:
+    image: ${HOPPIFY_IMAGE:-ghcr.io/chistopat/hoppify:latest}
+    environment:
+      HOPPIFY_ENV: prod
+      HOPPIFY_HTTP_ADDR: ":3000"
     labels:
       com.centurylinklabs.watchtower.enable: "true"
     restart: unless-stopped
@@ -82,6 +94,8 @@ services:
       - prometheus-data:/prometheus
     depends_on:
       fsqr:
+        condition: service_started
+      hoppify:
         condition: service_started
     restart: unless-stopped
 

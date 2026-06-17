@@ -75,6 +75,13 @@ variable "grafana_domain" {
   nullable    = true
 }
 
+variable "hoppify_domain" {
+  description = "Public hostname for Hoppify. Defaults to hoppify.<dns_zone_name> and must be inside dns_zone_name."
+  type        = string
+  default     = null
+  nullable    = true
+}
+
 variable "dns_ttl" {
   description = "TTL in seconds for fsqr DNS records."
   type        = number

@@ -32,6 +32,18 @@ services:
         condition: service_started
     restart: unless-stopped
 
+  hoppify:
+    image: ${HOPPIFY_IMAGE:-hoppify:local}
+    build:
+      context: ../apps/hoppify
+      dockerfile: build/Dockerfile
+    ports:
+      - "${HOPPIFY_HOST_PORT:-127.0.0.1:3100}:3000"
+    environment:
+      HOPPIFY_ENV: e2e
+      HOPPIFY_HTTP_ADDR: ":3000"
+    restart: unless-stopped
+
   postgres:
     image: ${POSTGRES_IMAGE:-pgvector/pgvector:pg18-bookworm}
     ports:

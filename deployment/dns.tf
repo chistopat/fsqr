@@ -1,6 +1,7 @@
 locals {
   dns_zone_name_normalized  = trimsuffix(var.dns_zone_name, ".")
   app_domain_normalized     = trimsuffix(var.app_domain, ".")
+  hoppify_domain_normalized = trimsuffix(coalesce(var.hoppify_domain, "hoppify.${local.dns_zone_name_normalized}"), ".")
   grafana_domain_normalized = trimsuffix(coalesce(var.grafana_domain, "grafana.${local.app_domain_normalized}"), ".")
 
   app_dns_record_name = (
@@ -13,6 +14,12 @@ locals {
     local.grafana_domain_normalized == local.dns_zone_name_normalized
     ? "@"
     : trimsuffix(local.grafana_domain_normalized, ".${local.dns_zone_name_normalized}")
+  )
+
+  hoppify_dns_record_name = (
+    local.hoppify_domain_normalized == local.dns_zone_name_normalized
+    ? "@"
+    : trimsuffix(local.hoppify_domain_normalized, ".${local.dns_zone_name_normalized}")
   )
 }
 
@@ -33,6 +40,16 @@ check "grafana_domain_in_dns_zone" {
       endswith(local.grafana_domain_normalized, ".${local.dns_zone_name_normalized}")
     )
     error_message = "grafana_domain must be equal to dns_zone_name or be a subdomain of dns_zone_name."
+  }
+}
+
+check "hoppify_domain_in_dns_zone" {
+  assert {
+    condition = (
+      local.hoppify_domain_normalized == local.dns_zone_name_normalized ||
+      endswith(local.hoppify_domain_normalized, ".${local.dns_zone_name_normalized}")
+    )
+    error_message = "hoppify_domain must be equal to dns_zone_name or be a subdomain of dns_zone_name."
   }
 }
 
@@ -70,6 +87,22 @@ resource "hcloud_zone_rrset" "grafana_a" {
     {
       value   = hcloud_primary_ip.ipv4.ip_address
       comment = "fsqr Grafana edge IPv4"
+    }
+  ]
+
+  labels = local.labels
+}
+
+resource "hcloud_zone_rrset" "hoppify_a" {
+  zone = hcloud_zone.primary.name
+  name = local.hoppify_dns_record_name
+  type = "A"
+  ttl  = var.dns_ttl
+
+  records = [
+    {
+      value   = hcloud_primary_ip.ipv4.ip_address
+      comment = "Hoppify edge IPv4"
     }
   ]
 

@@ -149,11 +149,14 @@ write_env_var() {
 
 generate_compose_env_file() {
     local path="$1"
+    local hoppify_domain="${HOPPIFY_DOMAIN:-hoppify.${FSQR_DNS_ZONE:-kailas.cloud}}"
 
     : > "$path"
     write_env_var "$path" KAILAS_COMPOSE_PROJECT "${KAILAS_COMPOSE_PROJECT:-fsqr-prod}"
     write_env_var "$path" FSQR_IMAGE "${FSQR_IMAGE:-ghcr.io/chistopat/fsqr:latest}"
+    write_env_var "$path" HOPPIFY_IMAGE "${HOPPIFY_IMAGE:-ghcr.io/chistopat/hoppify:latest}"
     write_env_var "$path" FSQR_DOMAIN "$FSQR_DOMAIN"
+    write_env_var "$path" HOPPIFY_DOMAIN "$hoppify_domain"
     write_env_var "$path" GRAFANA_DOMAIN "${GRAFANA_DOMAIN:-grafana.$FSQR_DOMAIN}"
     write_env_var "$path" POSTGRES_DB "${POSTGRES_DB:-fsqr}"
     write_env_var "$path" POSTGRES_USER "${POSTGRES_USER:-fsqr}"
@@ -262,9 +265,9 @@ if [[ -n "$ghcr_user" && -n "$ghcr_token" ]]; then
     printf '%s' "$ghcr_token" | docker login ghcr.io -u "$ghcr_user" --password-stdin >/dev/null
 fi
 
-docker compose --env-file .env -f deployment/compose.prod.yml pull fsqr caddy postgres tei prometheus grafana watchtower
+docker compose --env-file .env -f deployment/compose.prod.yml pull fsqr hoppify caddy postgres tei prometheus grafana watchtower
 docker compose --env-file .env -f deployment/compose.prod.yml up -d postgres tei
-docker compose --env-file .env -f deployment/compose.prod.yml up -d --remove-orphans fsqr prometheus grafana caddy watchtower
+docker compose --env-file .env -f deployment/compose.prod.yml up -d --remove-orphans fsqr hoppify prometheus grafana caddy watchtower
 EOF_REMOTE
 
 log "bootstrap completed: ssh $target, app dir $app_dir"

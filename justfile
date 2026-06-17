@@ -3,6 +3,7 @@ set dotenv-load := true
 compose := "docker compose -f deployment/compose.local.yml"
 e2e_compose := "docker compose -f deployment/compose.e2e.yml"
 fsqr_image := "fsqr:local"
+hoppify_image := "hoppify:local"
 tei_url := "http://127.0.0.1:8080"
 postgres_psql := compose + " exec -T postgres psql -v ON_ERROR_STOP=1 -U \"${POSTGRES_USER:-fsqr}\" -d \"${POSTGRES_DB:-fsqr}\""
 golangci_lint := "go run github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.8.0"
@@ -11,27 +12,35 @@ default:
     just --list
 
 service-build:
-    cd apps/fsqr && go build -o ../../bin/fsqr ./cmd/fsqr
+    cd apps/fsqr && GOWORK=off go build -o ../../bin/fsqr ./cmd/fsqr
+    cd apps/hoppify && GOWORK=off go build -o ../../bin/hoppify ./cmd/hoppify
 
 lint:
     cd apps/fsqr && GOWORK=off {{golangci_lint}} run ./... --timeout=5m
+    cd apps/hoppify && GOWORK=off {{golangci_lint}} run --config ../../.golangci.yml ./... --timeout=5m
 
 lint-fix:
     cd apps/fsqr && GOWORK=off {{golangci_lint}} run --fix ./... --timeout=5m
+    cd apps/hoppify && GOWORK=off {{golangci_lint}} run --config ../../.golangci.yml --fix ./... --timeout=5m
 
 pre-commit: service-build lint
-    cd apps/fsqr && go test ./...
-    cd apps/fsqr && go vet ./...
+    cd apps/fsqr && GOWORK=off go test ./...
+    cd apps/fsqr && GOWORK=off go vet ./...
+    cd apps/hoppify && GOWORK=off go test ./...
+    cd apps/hoppify && GOWORK=off go vet ./...
 
 fsqr-docker-build tag=fsqr_image:
     docker build -f apps/fsqr/build/Dockerfile -t {{tag}} apps/fsqr
+
+hoppify-docker-build tag=hoppify_image:
+    docker build -f apps/hoppify/build/Dockerfile -t {{tag}} apps/hoppify
 
 up:
     {{e2e_compose}} up -d --build postgres tei
     just test-postgres-wait
     just test-db-create
-    {{e2e_compose}} build fsqr
-    {{e2e_compose}} up -d fsqr
+    {{e2e_compose}} build fsqr hoppify
+    {{e2e_compose}} up -d fsqr hoppify
 
 down:
     {{e2e_compose}} down
@@ -121,6 +130,7 @@ test-e2e-wait:
     #!/usr/bin/env bash
     set -euo pipefail
     base_url="${BASE_URL:-http://127.0.0.1:3000}"
+    hoppify_base_url="${HOPPIFY_BASE_URL:-http://127.0.0.1:3100}"
     tei_base_url="${TEI_URL:-{{tei_url}}}"
 
     for attempt in {1..180}; do
@@ -136,7 +146,7 @@ test-e2e-wait:
 
     for attempt in {1..60}; do
         if curl -fsS "$base_url/live" >/dev/null 2>&1; then
-            exit 0
+            break
         fi
         if [[ "$attempt" == "60" ]]; then
             echo "fsqr api did not become ready in time" >&2
@@ -145,8 +155,19 @@ test-e2e-wait:
         sleep 1
     done
 
+    for attempt in {1..60}; do
+        if curl -fsS "$hoppify_base_url/live" >/dev/null 2>&1; then
+            exit 0
+        fi
+        if [[ "$attempt" == "60" ]]; then
+            echo "hoppify app did not become ready in time" >&2
+            exit 1
+        fi
+        sleep 1
+    done
+
 test-e2e: up test-migrate test-e2e-wait
-    cd apps/fsqr && TEST_DATABASE_URL="${TEST_DATABASE_URL:-postgres://${POSTGRES_USER:-fsqr}:${POSTGRES_PASSWORD:-fsqr}@127.0.0.1:5432/${TEST_POSTGRES_DB:-fsqr_test}?sslmode=disable}" BASE_URL="${BASE_URL:-http://127.0.0.1:3000}" go test -tags=e2e -count=1 -v ./tests
+    cd apps/fsqr && TEST_DATABASE_URL="${TEST_DATABASE_URL:-postgres://${POSTGRES_USER:-fsqr}:${POSTGRES_PASSWORD:-fsqr}@127.0.0.1:5432/${TEST_POSTGRES_DB:-fsqr_test}?sslmode=disable}" BASE_URL="${BASE_URL:-http://127.0.0.1:3000}" GOWORK=off go test -tags=e2e -count=1 -v ./tests
 
 places-migrate: postgres-migrate
 
@@ -187,6 +208,7 @@ cloud:
     export HCLOUD_TOKEN="$token"
     export TF_VAR_hcloud_token="$token"
     export TF_VAR_app_domain="$FSQR_DOMAIN"
+    export TF_VAR_hoppify_domain="${HOPPIFY_DOMAIN:-hoppify.$FSQR_DNS_ZONE}"
     export TF_VAR_grafana_domain="${GRAFANA_DOMAIN:-grafana.$FSQR_DOMAIN}"
     export TF_VAR_dns_zone_name="$FSQR_DNS_ZONE"
 

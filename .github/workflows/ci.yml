@@ -79,7 +79,7 @@ jobs:
 
       - name: Check gofmt
         run: |
-          files="$(gofmt -l $(find apps/fsqr -name '*.go' -not -path './vendor/*'))"
+          files="$(gofmt -l $(find apps/fsqr apps/hoppify -name '*.go' -not -path './vendor/*'))"
           if [ -n "$files" ]; then
             echo "Files are not gofmt-formatted:"
             echo "$files"
@@ -90,13 +90,25 @@ jobs:
         working-directory: apps/fsqr
         run: GOWORK=off go run github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.8.0 run ./... --timeout=5m
 
+      - name: Run Hoppify golangci-lint
+        working-directory: apps/hoppify
+        run: GOWORK=off go run github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.8.0 run --config ../../.golangci.yml ./... --timeout=5m
+
       - name: Run go vet
         working-directory: apps/fsqr
-        run: go vet ./...
+        run: GOWORK=off go vet ./...
+
+      - name: Run Hoppify go vet
+        working-directory: apps/hoppify
+        run: GOWORK=off go vet ./...
 
       - name: Run unit tests
         working-directory: apps/fsqr
-        run: go test ./...
+        run: GOWORK=off go test ./...
+
+      - name: Run Hoppify unit tests
+        working-directory: apps/hoppify
+        run: GOWORK=off go test ./...
 
       - name: Run release script tests
         run: python3 -m unittest scripts/next_release_test.py
@@ -114,7 +126,11 @@ jobs:
 
       - name: Build binary
         working-directory: apps/fsqr
-        run: go build -trimpath -o ../../bin/fsqr ./cmd/fsqr
+        run: GOWORK=off go build -trimpath -o ../../bin/fsqr ./cmd/fsqr
+
+      - name: Build Hoppify binary
+        working-directory: apps/hoppify
+        run: GOWORK=off go build -trimpath -o ../../bin/hoppify ./cmd/hoppify
 
   e2e:
     name: Docker Compose E2E
@@ -126,6 +142,7 @@ jobs:
       POSTGRES_PASSWORD: fsqr
       TEST_POSTGRES_DB: fsqr_test
       FSQR_HOST_PORT: 127.0.0.1:3000
+      HOPPIFY_HOST_PORT: 127.0.0.1:3100
       POSTGRES_HOST_PORT: 127.0.0.1:5432
       TEI_HOST_PORT: 127.0.0.1:8080
       TEI_IMAGE: ghcr.io/huggingface/text-embeddings-inference:cpu-1.9
@@ -165,6 +182,9 @@ jobs:
       - name: Build fsqr image
         run: docker build -f apps/fsqr/build/Dockerfile -t fsqr:local apps/fsqr
 
+      - name: Build Hoppify image
+        run: docker build -f apps/hoppify/build/Dockerfile -t hoppify:local apps/hoppify
+
       - name: Start e2e environment
         run: |
           set -euo pipefail
@@ -192,7 +212,7 @@ jobs:
           SQL
 
           "${compose[@]}" run --build --rm migrate-fsqr
-          "${compose[@]}" up -d --no-build fsqr
+          "${compose[@]}" up -d --no-build fsqr hoppify
 
       - name: Wait for services
         run: |
@@ -211,10 +231,21 @@ jobs:
 
           for attempt in {1..60}; do
             if curl -fsS "http://127.0.0.1:3000/live" >/dev/null 2>&1; then
-              exit 0
+              break
             fi
             if [ "$attempt" = "60" ]; then
               echo "fsqr api did not become ready in time" >&2
+              exit 1
+            fi
+            sleep 1
+          done
+
+          for attempt in {1..60}; do
+            if curl -fsS "http://127.0.0.1:3100/live" >/dev/null 2>&1; then
+              exit 0
+            fi
+            if [ "$attempt" = "60" ]; then
+              echo "hoppify app did not become ready in time" >&2
               exit 1
             fi
             sleep 1
@@ -225,20 +256,20 @@ jobs:
           BASE_URL: http://127.0.0.1:3000
           TEST_DATABASE_URL: postgres://fsqr:fsqr@127.0.0.1:5432/fsqr_test?sslmode=disable
         working-directory: apps/fsqr
-        run: go test -tags=e2e -count=1 -v ./tests
+        run: GOWORK=off go test -tags=e2e -count=1 -v ./tests
 
       - name: Dump e2e logs on failure
         if: failure()
         run: |
           docker compose -f deployment/compose.e2e.yml ps || true
-          docker compose -f deployment/compose.e2e.yml logs --no-color postgres tei fsqr migrate-fsqr || true
+          docker compose -f deployment/compose.e2e.yml logs --no-color postgres tei fsqr hoppify migrate-fsqr || true
 
       - name: Tear down e2e environment
         if: always()
         run: docker compose -f deployment/compose.e2e.yml down -v --remove-orphans || true
 
   publish:
-    name: Tag and Publish fsqr Image
+    name: Tag and Publish App Images
     runs-on: ubuntu-24.04
     needs: e2e
     if: github.event_name == 'push' && github.ref == 'refs/heads/master'
@@ -258,7 +289,8 @@ jobs:
 
       - name: Build image
         env:
-          IMAGE: ${{ steps.version.outputs.image }}
+          FSQR_IMAGE: ${{ steps.version.outputs.image }}
+          HOPPIFY_IMAGE: ghcr.io/${{ github.repository_owner }}/hoppify
           VERSION: ${{ steps.version.outputs.version }}
         run: |
           docker build \
@@ -266,8 +298,15 @@ jobs:
             --label "org.opencontainers.image.revision=${GITHUB_SHA}" \
             --label "org.opencontainers.image.version=${VERSION}" \
             -f apps/fsqr/build/Dockerfile \
-            -t "${IMAGE}:${VERSION}" \
+            -t "${FSQR_IMAGE}:${VERSION}" \
             apps/fsqr
+          docker build \
+            --label "org.opencontainers.image.source=https://github.com/${GITHUB_REPOSITORY}" \
+            --label "org.opencontainers.image.revision=${GITHUB_SHA}" \
+            --label "org.opencontainers.image.version=${VERSION}" \
+            -f apps/hoppify/build/Dockerfile \
+            -t "${HOPPIFY_IMAGE}:${VERSION}" \
+            apps/hoppify
 
       - name: Login to GHCR
         env:
@@ -276,25 +315,32 @@ jobs:
 
       - name: Push image
         env:
-          IMAGE: ${{ steps.version.outputs.image }}
+          FSQR_IMAGE: ${{ steps.version.outputs.image }}
+          HOPPIFY_IMAGE: ghcr.io/${{ github.repository_owner }}/hoppify
           VERSION: ${{ steps.version.outputs.version }}
         run: |
-          docker push "${IMAGE}:${VERSION}"
-          docker tag "${IMAGE}:${VERSION}" "${IMAGE}:prod"
-          docker push "${IMAGE}:prod"
-          docker tag "${IMAGE}:${VERSION}" "${IMAGE}:latest"
-          docker push "${IMAGE}:latest"
+          for image in "$FSQR_IMAGE" "$HOPPIFY_IMAGE"; do
+            docker push "${image}:${VERSION}"
+            docker tag "${image}:${VERSION}" "${image}:prod"
+            docker push "${image}:prod"
+            docker tag "${image}:${VERSION}" "${image}:latest"
+            docker push "${image}:latest"
+          done
 
       - name: Create GitHub release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          IMAGE: ${{ steps.version.outputs.image }}
+          FSQR_IMAGE: ${{ steps.version.outputs.image }}
+          HOPPIFY_IMAGE: ghcr.io/${{ github.repository_owner }}/hoppify
           VERSION: ${{ steps.version.outputs.version }}
         run: |
+          printf 'Docker images:\n- %s:%s\n- %s:%s\n' \
+            "$FSQR_IMAGE" "$VERSION" \
+            "$HOPPIFY_IMAGE" "$VERSION" > release-notes.md
           gh release create "$VERSION" \
             --target "$GITHUB_SHA" \
             --title "$VERSION" \
-            --notes "Docker image: ${IMAGE}:${VERSION}"
+            --notes-file release-notes.md
 
   deploy-smoke:
     name: Watchtower Deploy Smoke Check
@@ -303,25 +349,30 @@ jobs:
     if: github.event_name == 'push' && github.ref == 'refs/heads/master'
     timeout-minutes: 20
     steps:
-      - name: Wait for fsqr deployment
+      - name: Wait for app deployments
         env:
           FSQR_DOMAIN: ${{ vars.FSQR_DOMAIN }}
+          HOPPIFY_DOMAIN: ${{ vars.HOPPIFY_DOMAIN }}
         run: |
           set -euo pipefail
 
-          if [ -z "${FSQR_DOMAIN:-}" ]; then
-            echo "FSQR_DOMAIN repository variable is not set; skipping deploy smoke check"
-            exit 0
+          if [ -z "${FSQR_DOMAIN:-}" ] || [ -z "${HOPPIFY_DOMAIN:-}" ]; then
+            echo "FSQR_DOMAIN and HOPPIFY_DOMAIN repository variables must be set" >&2
+            exit 1
           fi
 
-          url="https://${FSQR_DOMAIN}/live"
+          fsqr_live_url="https://${FSQR_DOMAIN}/live"
+          hoppify_live_url="https://${HOPPIFY_DOMAIN}/live"
+          hoppify_page_url="https://${HOPPIFY_DOMAIN}/"
           for attempt in {1..90}; do
-            if curl -fsS "$url" >/dev/null; then
-              echo "deployment smoke check passed: $url"
+            if curl -fsS "$fsqr_live_url" >/dev/null &&
+               curl -fsS "$hoppify_live_url" >/dev/null &&
+               curl -fsS "$hoppify_page_url" | grep -q "Hoppify"; then
+              echo "deployment smoke check passed: $fsqr_live_url, $hoppify_page_url"
               exit 0
             fi
             sleep 10
           done
 
-          echo "deployment smoke check failed: $url did not become healthy" >&2
+          echo "deployment smoke check failed: fsqr or hoppify did not become healthy" >&2
           exit 1

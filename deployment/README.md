@@ -8,7 +8,7 @@ OpenTofu configuration for one Hetzner Cloud VM in Helsinki with Docker CE prein
 - Static Primary IPv4: `auto_delete = false` so DNS can keep using the same address after VM replacement.
 - Server: `cpx42` in `hel1` Helsinki, image `docker-ce`, IPv4 enabled, IPv6 disabled.
 - DNS zone: primary Hetzner DNS zone for `kailas.cloud`.
-- DNS records: `A` RRSets for `fsqr.kailas.cloud` and Grafana pointing at the static Primary IPv4.
+- DNS records: `A` RRSets for fsqr, Hoppify, and Grafana pointing at the static Primary IPv4.
 - SSH key: uploaded from `../.ssh/fsqr_hcloud_ed25519.pub`.
 - Cloud-init: creates non-root `deploy` user, disables password auth and root SSH, verifies Docker Compose.
 
@@ -26,7 +26,9 @@ Optional root `.env` values used by Compose/bootstrap:
 
 ```env
 FSQR_IMAGE=ghcr.io/chistopat/fsqr:latest
+HOPPIFY_IMAGE=ghcr.io/chistopat/hoppify:latest
 FSQR_DOMAIN=fsqr.kailas.cloud
+HOPPIFY_DOMAIN=hoppify.kailas.cloud
 GRAFANA_DOMAIN=grafana.fsqr.kailas.cloud
 FSQR_DNS_ZONE=kailas.cloud
 POSTGRES_DB=fsqr
@@ -80,10 +82,10 @@ tofu apply
 ```
 
 After apply, use the output SSH command. `just cloud` maps root `.env`
-`FSQR_DOMAIN` to Terraform `app_domain`, `GRAFANA_DOMAIN` to Terraform
-`grafana_domain`, and `FSQR_DNS_ZONE` to Terraform `dns_zone_name`. The
-`app_domain` and `grafana_domain` outputs are managed as `A` records in Hetzner
-DNS and point to the `ipv4_address` output.
+`FSQR_DOMAIN` to Terraform `app_domain`, `HOPPIFY_DOMAIN` to Terraform
+`hoppify_domain`, `GRAFANA_DOMAIN` to Terraform `grafana_domain`, and
+`FSQR_DNS_ZONE` to Terraform `dns_zone_name`. The app and Grafana outputs are
+managed as `A` records in Hetzner DNS and point to the `ipv4_address` output.
 
 If `kailas.cloud` is not delegated to Hetzner nameservers yet, update the
 registrar to use the `dns_zone_nameservers` output. Terraform can manage the
@@ -104,10 +106,10 @@ The bootstrap command:
 - Resolves the server IPv4 from `tofu output -raw ipv4_address`, unless `KAILAS_DEPLOY_HOST` or `FSQR_DEPLOY_HOST` is set.
 - Reads root `.env` as the only local secret source.
 - Generates a minimal `/opt/fsqr/.env` for Docker Compose secrets/interpolation.
-- Generates `/opt/fsqr/apps/fsqr/config.yaml` for application settings.
+- Generates `/opt/fsqr/apps/fsqr/config.yaml` for fsqr application settings.
 - Copies `deployment/compose.prod.yml`, `gateway/Caddyfile.prod`, observability provisioning, dashboards, and fsqr SQL migrations into the same relative layout used in the repository.
 - Optionally logs in to GHCR when `GHCR_USERNAME` and `GHCR_TOKEN` are present in root `.env`.
-- Runs `docker compose pull` and starts the stack. It does not apply migrations.
+- Runs `docker compose pull` and starts fsqr, Hoppify, and shared infrastructure. It does not apply migrations.
 
 The `fsqr` container receives application settings only through
 `FSQR_CONFIG_FILE=/app/config/config.yaml`; production database and embedding
@@ -134,9 +136,9 @@ KAILAS_DEPLOY_DIR=/opt/fsqr just bootstrap
 KAILAS_ROOT_ENV_FILE=.env just bootstrap
 ```
 
-Set `FSQR_DOMAIN=fsqr.kailas.cloud` and
+Set `FSQR_DOMAIN=fsqr.kailas.cloud`, `HOPPIFY_DOMAIN=hoppify.kailas.cloud`, and
 `GRAFANA_DOMAIN=grafana.fsqr.kailas.cloud` in root `.env`. These are the
-hostname sources of truth for Terraform, bootstrap, Compose, and Caddy.
+hostname sources of truth for Terraform, bootstrap, Compose, Caddy, and CI smoke checks.
 Bootstrap writes those values to `/opt/fsqr/.env`; Caddy then serves HTTPS and
 obtains certificates for both subdomains automatically once DNS resolves to the
 server.

@@ -12,6 +12,7 @@ fsqr is a fast semantic geosearch API and map UI for place discovery. It combine
 
 - Monorepo layout with applications under `apps/`.
 - `fsqr` Go service rooted at `apps/fsqr`.
+- `hoppify` Go service rooted at `apps/hoppify`.
 - PostgreSQL-backed search and place storage.
 - Foursquare OS Places as the POI source.
 - Overture Maps divisions as the planned geographic boundary/source layer.
@@ -27,6 +28,7 @@ Use `just` as the main task runner:
 just service-build
 just lint
 cd apps/fsqr && go test ./...
+cd apps/hoppify && go test ./...
 ```
 
 Run the e2e stack:
