@@ -1,0 +1,317 @@
+package captures
+
+import (
+	"bytes"
+	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"fmt"
+	"image"
+	"image/color"
+	"image/draw"
+	"image/jpeg"
+	_ "image/png"
+	"mime"
+	"strings"
+	"time"
+
+	capturemodel "github.com/chistopat/hoppify/internal/models/capture"
+
+	"github.com/google/uuid"
+	_ "golang.org/x/image/webp"
+)
+
+type Repository interface {
+	InsertCaptures(ctx context.Context, records []capturemodel.Record) error
+}
+
+type ObjectStorage interface {
+	PutObject(ctx context.Context, object capturemodel.Object) error
+	DeleteObject(ctx context.Context, bucket, objectKey string) error
+}
+
+type UUIDGenerator func() (uuid.UUID, error)
+
+type Config struct {
+	Bucket      string
+	Limits      capturemodel.Limits
+	JPEGQuality int
+	NewUUID     UUIDGenerator
+}
+
+type Service struct {
+	repository  Repository
+	storage     ObjectStorage
+	bucket      string
+	limits      capturemodel.Limits
+	jpegQuality int
+	newUUID     UUIDGenerator
+}
+
+type preparedCapture struct {
+	record capturemodel.Record
+	body   []byte
+}
+
+func NewService(repository Repository, storage ObjectStorage, cfg Config) (*Service, error) {
+	if repository == nil {
+		return nil, fmt.Errorf("captures repository is required")
+	}
+	if storage == nil {
+		return nil, fmt.Errorf("captures object storage is required")
+	}
+	if cfg.Bucket == "" {
+		return nil, fmt.Errorf("captures bucket is required")
+	}
+
+	return &Service{
+		repository:  repository,
+		storage:     storage,
+		bucket:      cfg.Bucket,
+		limits:      normalizeLimits(cfg.Limits),
+		jpegQuality: normalizeJPEGQuality(cfg.JPEGQuality),
+		newUUID:     uuidGeneratorOrDefault(cfg.NewUUID),
+	}, nil
+}
+
+func (svc *Service) CreateCaptures(
+	ctx context.Context,
+	files []capturemodel.UploadFile,
+) ([]capturemodel.Response, error) {
+	if err := svc.validateBatchSize(files); err != nil {
+		return nil, err
+	}
+
+	prepared, err := svc.prepareBatch(files)
+	if err != nil {
+		return nil, err
+	}
+
+	uploaded, err := svc.uploadBatch(ctx, prepared)
+	if err != nil {
+		return nil, err
+	}
+
+	records := recordsFromPrepared(prepared)
+	if err := svc.repository.InsertCaptures(ctx, records); err != nil {
+		svc.cleanupUploaded(uploaded)
+		return nil, newError(InternalError, "internal server error", err)
+	}
+
+	return responsesFromRecords(records), nil
+}
+
+func (svc *Service) validateBatchSize(files []capturemodel.UploadFile) error {
+	if len(files) == 0 {
+		return newError(InvalidRequest, "files field is required", nil)
+	}
+	if len(files) > svc.limits.MaxFiles {
+		return newError(InvalidRequest, fmt.Sprintf("files field accepts at most %d files", svc.limits.MaxFiles), nil)
+	}
+
+	return nil
+}
+
+func (svc *Service) prepareBatch(files []capturemodel.UploadFile) ([]preparedCapture, error) {
+	prepared := make([]preparedCapture, 0, len(files))
+	for _, file := range files {
+		capture, err := svc.prepareCapture(file)
+		if err != nil {
+			return nil, err
+		}
+		prepared = append(prepared, capture)
+	}
+
+	return prepared, nil
+}
+
+func (svc *Service) prepareCapture(file capturemodel.UploadFile) (preparedCapture, error) {
+	if file.SizeBytes <= 0 {
+		file.SizeBytes = int64(len(file.Data))
+	}
+	if file.SizeBytes > svc.limits.MaxFileBytes || int64(len(file.Data)) > svc.limits.MaxFileBytes {
+		return preparedCapture{}, newError(PayloadTooLarge, "file exceeds maximum size", nil)
+	}
+
+	declaredContentType, err := validateDeclaredContentType(file.ContentType)
+	if err != nil {
+		return preparedCapture{}, err
+	}
+
+	img, format, err := image.Decode(bytes.NewReader(file.Data))
+	if err != nil {
+		return preparedCapture{}, newError(InvalidRequest, "file cannot be decoded as an image", err)
+	}
+
+	actualContentType, ok := contentTypeByFormat[format]
+	if !ok {
+		return preparedCapture{}, newError(UnsupportedMediaType, "unsupported image format", nil)
+	}
+	if actualContentType != declaredContentType {
+		return preparedCapture{}, newError(UnsupportedMediaType, "declared media type does not match image content", nil)
+	}
+
+	jpegBody, err := encodeJPEG(img, svc.jpegQuality)
+	if err != nil {
+		return preparedCapture{}, newError(InvalidRequest, "file cannot be converted to jpeg", err)
+	}
+
+	id, err := svc.newUUID()
+	if err != nil {
+		return preparedCapture{}, newError(InternalError, "internal server error", err)
+	}
+
+	return svc.newPreparedCapture(file, id, format, img.Bounds(), jpegBody), nil
+}
+
+func (svc *Service) newPreparedCapture(
+	file capturemodel.UploadFile,
+	id uuid.UUID,
+	format string,
+	bounds image.Rectangle,
+	jpegBody []byte,
+) preparedCapture {
+	checksum := sha256.Sum256(jpegBody)
+	objectKey := fmt.Sprintf("captures/image/%s.jpg", id.String())
+
+	record := capturemodel.Record{
+		UUID:           id,
+		Type:           capturemodel.TypeImage,
+		Bucket:         svc.bucket,
+		ObjectKey:      objectKey,
+		ContentType:    capturemodel.ContentTypeJPEG,
+		SizeBytes:      int64(len(jpegBody)),
+		ChecksumSHA256: hex.EncodeToString(checksum[:]),
+		Metadata: buildMetadata(file, format, dimensions{
+			width:  bounds.Dx(),
+			height: bounds.Dy(),
+		}, len(jpegBody), svc.jpegQuality),
+	}
+
+	return preparedCapture{record: record, body: jpegBody}
+}
+
+func (svc *Service) uploadBatch(ctx context.Context, prepared []preparedCapture) ([]preparedCapture, error) {
+	uploaded := make([]preparedCapture, 0, len(prepared))
+	for index := range prepared {
+		capture := prepared[index]
+		object := capture.record.Object()
+		object.Body = capture.body
+
+		if err := svc.storage.PutObject(ctx, object); err != nil {
+			failedUploads := append([]preparedCapture{}, uploaded...)
+			failedUploads = append(failedUploads, capture)
+			svc.cleanupUploaded(failedUploads)
+			return nil, newError(StorageError, "object storage upload failed", err)
+		}
+
+		uploaded = append(uploaded, capture)
+	}
+
+	return uploaded, nil
+}
+
+func (svc *Service) cleanupUploaded(captures []preparedCapture) {
+	cleanupCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	for index := range captures {
+		capture := captures[index]
+		_ = svc.storage.DeleteObject(cleanupCtx, capture.record.Bucket, capture.record.ObjectKey)
+	}
+}
+
+func recordsFromPrepared(prepared []preparedCapture) []capturemodel.Record {
+	records := make([]capturemodel.Record, 0, len(prepared))
+	for index := range prepared {
+		records = append(records, prepared[index].record)
+	}
+
+	return records
+}
+
+func responsesFromRecords(records []capturemodel.Record) []capturemodel.Response {
+	responses := make([]capturemodel.Response, 0, len(records))
+	for index := range records {
+		responses = append(responses, records[index].Response())
+	}
+
+	return responses
+}
+
+func validateDeclaredContentType(raw string) (string, error) {
+	if raw == "" {
+		return "", newError(UnsupportedMediaType, "file content type is required", nil)
+	}
+
+	contentType, _, err := mime.ParseMediaType(raw)
+	if err != nil {
+		return "", newError(UnsupportedMediaType, "invalid file content type", err)
+	}
+
+	contentType = strings.ToLower(contentType)
+	if _, ok := supportedContentTypes[contentType]; !ok {
+		return "", newError(UnsupportedMediaType, "unsupported file content type", nil)
+	}
+
+	return contentType, nil
+}
+
+func encodeJPEG(img image.Image, quality int) ([]byte, error) {
+	bounds := img.Bounds()
+	canvas := image.NewRGBA(image.Rect(0, 0, bounds.Dx(), bounds.Dy()))
+	draw.Draw(canvas, canvas.Bounds(), &image.Uniform{C: color.White}, image.Point{}, draw.Src)
+	draw.Draw(canvas, canvas.Bounds(), img, bounds.Min, draw.Over)
+
+	var buffer bytes.Buffer
+	if err := jpeg.Encode(&buffer, canvas, &jpeg.Options{Quality: quality}); err != nil {
+		return nil, fmt.Errorf("encode jpeg: %w", err)
+	}
+
+	return buffer.Bytes(), nil
+}
+
+func normalizeLimits(limits capturemodel.Limits) capturemodel.Limits {
+	if limits.MaxFiles <= 0 {
+		limits.MaxFiles = 10
+	}
+	if limits.MaxFileBytes <= 0 {
+		limits.MaxFileBytes = 15 * 1024 * 1024
+	}
+	if limits.MaxRequestBytes <= 0 {
+		limits.MaxRequestBytes = 150 * 1024 * 1024
+	}
+
+	return limits
+}
+
+func normalizeJPEGQuality(quality int) int {
+	if quality <= 0 {
+		return 95
+	}
+	if quality > 100 {
+		return 100
+	}
+
+	return quality
+}
+
+func uuidGeneratorOrDefault(generator UUIDGenerator) UUIDGenerator {
+	if generator != nil {
+		return generator
+	}
+
+	return uuid.NewV7
+}
+
+var supportedContentTypes = map[string]struct{}{
+	"image/jpeg": {},
+	"image/png":  {},
+	"image/webp": {},
+}
+
+var contentTypeByFormat = map[string]string{
+	"jpeg": "image/jpeg",
+	"png":  "image/png",
+	"webp": "image/webp",
+}

@@ -1,0 +1,134 @@
+openapi: 3.0.3
+info:
+  title: Hoppify API
+  version: 0.1.0
+paths:
+  /live:
+    get:
+      summary: Liveness check
+      responses:
+        "200":
+          description: Hoppify is running
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - status
+                  - service
+                properties:
+                  status:
+                    type: string
+                    example: ok
+                  service:
+                    type: string
+                    example: hoppify
+  /api/v1/captures:
+    post:
+      summary: Upload image captures
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required:
+                - files
+              properties:
+                files:
+                  type: array
+                  minItems: 1
+                  maxItems: 10
+                  items:
+                    type: string
+                    format: binary
+              additionalProperties: false
+            encoding:
+              files:
+                contentType: image/jpeg, image/png, image/webp
+      responses:
+        "201":
+          description: Captures were stored
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CapturesResponse"
+        "400":
+          description: Invalid request or undecodable image
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "413":
+          description: File or request body is too large
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "415":
+          description: Unsupported image media type
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "502":
+          description: Object storage failed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          description: Internal error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+components:
+  schemas:
+    CapturesResponse:
+      type: object
+      required:
+        - captures
+      properties:
+        captures:
+          type: array
+          items:
+            $ref: "#/components/schemas/Capture"
+    Capture:
+      type: object
+      required:
+        - uuid
+        - type
+        - uri
+      properties:
+        uuid:
+          type: string
+          format: uuid
+          example: 018f7b8e-4d96-7b42-9f64-09e5d3a8e7c1
+        type:
+          type: string
+          example: image
+        uri:
+          type: string
+          example: s3://hoppify/captures/image/018f7b8e-4d96-7b42-9f64-09e5d3a8e7c1.jpg
+    ErrorResponse:
+      type: object
+      required:
+        - error
+      properties:
+        error:
+          type: object
+          required:
+            - code
+            - message
+          properties:
+            code:
+              type: string
+              enum:
+                - invalid_request
+                - payload_too_large
+                - unsupported_media_type
+                - storage_error
+                - internal_error
+            message:
+              type: string

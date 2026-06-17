@@ -3,10 +3,12 @@ package httpapi
 import (
 	"embed"
 	"encoding/json"
-	"fmt"
 	"io/fs"
 	"net/http"
-	"time"
+
+	capturemodel "github.com/chistopat/hoppify/internal/models/capture"
+
+	"go.uber.org/zap"
 )
 
 //go:embed web/index.html web/assets/*
@@ -17,16 +19,57 @@ type liveResponse struct {
 	Service string `json:"service"`
 }
 
-func NewHandler(startedAt time.Time) http.Handler {
+type HandlerOption func(*handlerConfig)
+
+type handlerConfig struct {
+	captureService CaptureCreator
+	limits         capturemodel.Limits
+	log            *zap.Logger
+	metrics        *HTTPMetrics
+}
+
+func WithCaptureService(service CaptureCreator) HandlerOption {
+	return func(cfg *handlerConfig) {
+		cfg.captureService = service
+	}
+}
+
+func WithCaptureLimits(limits capturemodel.Limits) HandlerOption {
+	return func(cfg *handlerConfig) {
+		cfg.limits = limits
+	}
+}
+
+func WithLogger(log *zap.Logger) HandlerOption {
+	return func(cfg *handlerConfig) {
+		cfg.log = log
+	}
+}
+
+func WithHTTPMetrics(metrics *HTTPMetrics) HandlerOption {
+	return func(cfg *handlerConfig) {
+		cfg.metrics = metrics
+	}
+}
+
+func NewHandler(options ...HandlerOption) http.Handler {
+	cfg := handlerConfig{limits: normalizeHTTPLimits(capturemodel.Limits{})}
+	for _, option := range options {
+		option(&cfg)
+	}
+
 	mux := http.NewServeMux()
 	webRoot := mustSub(webFiles, "web")
 
 	mux.Handle("GET /assets/", http.FileServer(http.FS(webRoot)))
 	mux.HandleFunc("GET /", serveIndex(webRoot))
 	mux.HandleFunc("GET /live", serveLive)
-	mux.HandleFunc("GET /metrics", serveMetrics(startedAt))
+	mux.HandleFunc("GET /swagger.json", serveSwaggerJSON)
+	mux.HandleFunc("GET /swagger", serveSwaggerViewer)
+	mux.HandleFunc("GET /swagger/", serveSwaggerViewer)
+	mux.HandleFunc("POST /api/v1/captures", createCaptures(cfg.captureService, cfg.limits, cfg.log))
 
-	return mux
+	return logAndMeasureRequests(mux, cfg.log, cfg.metrics)
 }
 
 func serveIndex(webRoot fs.FS) http.HandlerFunc {
@@ -45,21 +88,6 @@ func serveLive(w http.ResponseWriter, _ *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	if err := json.NewEncoder(w).Encode(liveResponse{Status: "ok", Service: "hoppify"}); err != nil {
 		http.Error(w, "encode response", http.StatusInternalServerError)
-	}
-}
-
-func serveMetrics(startedAt time.Time) http.HandlerFunc {
-	return func(w http.ResponseWriter, _ *http.Request) {
-		w.Header().Set("Content-Type", "text/plain; version=0.0.4; charset=utf-8")
-		uptime := time.Since(startedAt).Seconds()
-		metrics := fmt.Sprintf(`# HELP hoppify_up Whether the Hoppify process is running.
-# TYPE hoppify_up gauge
-hoppify_up 1
-# HELP hoppify_uptime_seconds Hoppify process uptime in seconds.
-# TYPE hoppify_uptime_seconds gauge
-hoppify_uptime_seconds %.0f
-`, uptime)
-		_, _ = w.Write([]byte(metrics))
 	}
 }
 

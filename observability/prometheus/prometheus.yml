@@ -18,4 +18,4 @@ scrape_configs:
     metrics_path: /metrics
     static_configs:
       - targets:
-          - hoppify:3000
+          - hoppify:3001

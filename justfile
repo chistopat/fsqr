@@ -93,6 +93,7 @@ postgres-psql:
 
 postgres-migrate:
     {{compose}} run --build --rm migrate-fsqr
+    {{compose}} run --build --rm migrate-hoppify
 
 test-db-create:
     #!/usr/bin/env bash
@@ -122,9 +123,13 @@ test-postgres-wait:
 
 test-migrate: test-db-create
     {{e2e_compose}} run --build --rm migrate-fsqr
+    {{e2e_compose}} run --build --rm migrate-hoppify
 
 test-postgres-psql:
     {{e2e_compose}} exec postgres psql -U "${POSTGRES_USER:-fsqr}" -d "${TEST_POSTGRES_DB:-fsqr_test}"
+
+test-hoppify-postgres-psql:
+    {{e2e_compose}} exec -e PGPASSWORD="${HOPPIFY_POSTGRES_PASSWORD:-hoppify}" postgres psql -U "${HOPPIFY_POSTGRES_USER:-hoppify}" -d "${TEST_HOPPIFY_POSTGRES_DB:-hoppify_test}"
 
 test-e2e-wait:
     #!/usr/bin/env bash
@@ -166,8 +171,12 @@ test-e2e-wait:
         sleep 1
     done
 
+test-hoppify-e2e: up test-migrate test-e2e-wait
+    cd apps/hoppify && TEST_DATABASE_URL="${TEST_HOPPIFY_DATABASE_URL:-postgres://${HOPPIFY_POSTGRES_USER:-hoppify}:${HOPPIFY_POSTGRES_PASSWORD:-hoppify}@127.0.0.1:5432/${TEST_HOPPIFY_POSTGRES_DB:-hoppify_test}?sslmode=disable}" BASE_URL="${HOPPIFY_BASE_URL:-http://127.0.0.1:3100}" HOPPIFY_METRICS_URL="${HOPPIFY_METRICS_URL:-http://127.0.0.1:3101/metrics}" HOPPIFY_S3_ENDPOINT_URL="${HOPPIFY_S3_ENDPOINT_URL:-http://127.0.0.1:9000}" HOPPIFY_S3_ACCESS_KEY_ID="${HOPPIFY_S3_ACCESS_KEY_ID:-minioadmin}" HOPPIFY_S3_SECRET_ACCESS_KEY="${HOPPIFY_S3_SECRET_ACCESS_KEY:-minioadmin}" GOWORK=off go test -tags=e2e -count=1 -v ./tests
+
 test-e2e: up test-migrate test-e2e-wait
     cd apps/fsqr && TEST_DATABASE_URL="${TEST_DATABASE_URL:-postgres://${POSTGRES_USER:-fsqr}:${POSTGRES_PASSWORD:-fsqr}@127.0.0.1:5432/${TEST_POSTGRES_DB:-fsqr_test}?sslmode=disable}" BASE_URL="${BASE_URL:-http://127.0.0.1:3000}" GOWORK=off go test -tags=e2e -count=1 -v ./tests
+    cd apps/hoppify && TEST_DATABASE_URL="${TEST_HOPPIFY_DATABASE_URL:-postgres://${HOPPIFY_POSTGRES_USER:-hoppify}:${HOPPIFY_POSTGRES_PASSWORD:-hoppify}@127.0.0.1:5432/${TEST_HOPPIFY_POSTGRES_DB:-hoppify_test}?sslmode=disable}" BASE_URL="${HOPPIFY_BASE_URL:-http://127.0.0.1:3100}" HOPPIFY_METRICS_URL="${HOPPIFY_METRICS_URL:-http://127.0.0.1:3101/metrics}" HOPPIFY_S3_ENDPOINT_URL="${HOPPIFY_S3_ENDPOINT_URL:-http://127.0.0.1:9000}" HOPPIFY_S3_ACCESS_KEY_ID="${HOPPIFY_S3_ACCESS_KEY_ID:-minioadmin}" HOPPIFY_S3_SECRET_ACCESS_KEY="${HOPPIFY_S3_SECRET_ACCESS_KEY:-minioadmin}" GOWORK=off go test -tags=e2e -count=1 -v ./tests
 
 places-migrate: postgres-migrate
 
@@ -251,14 +260,16 @@ migrate:
         echo ".env is missing in $APP_DIR; run just bootstrap first" >&2
         exit 1
     fi
-    mkdir -p "$APP_DIR/deployment" "$APP_DIR/apps/fsqr/migrations"
+    mkdir -p "$APP_DIR/deployment" "$APP_DIR/apps/fsqr/migrations" "$APP_DIR/apps/hoppify/migrations"
     EOF
 
     rsync -az -e "$rsync_ssh" deployment/compose.prod.yml "$target:$app_dir/deployment/compose.prod.yml"
     rsync -az --delete -e "$rsync_ssh" apps/fsqr/migrations/ "$target:$app_dir/apps/fsqr/migrations/"
+    rsync -az --delete -e "$rsync_ssh" apps/hoppify/migrations/ "$target:$app_dir/apps/hoppify/migrations/"
 
     ssh "${ssh_opts[@]}" "$target" APP_DIR="$app_dir" 'bash -s' <<'EOF'
     set -euo pipefail
     cd "$APP_DIR"
     docker compose --env-file .env -f deployment/compose.prod.yml run --rm migrate-fsqr
+    docker compose --env-file .env -f deployment/compose.prod.yml run --rm migrate-hoppify
     EOF

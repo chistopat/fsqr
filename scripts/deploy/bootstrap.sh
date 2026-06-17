@@ -129,6 +129,66 @@ observability:
 EOF_CONFIG
 }
 
+generate_hoppify_config_file() {
+    local path="$1"
+    local hoppify_postgres_db="${HOPPIFY_POSTGRES_DB:-hoppify}"
+    local hoppify_postgres_user="${HOPPIFY_POSTGRES_USER:-hoppify}"
+    local hoppify_postgres_password="${HOPPIFY_POSTGRES_PASSWORD:-$POSTGRES_PASSWORD}"
+    local s3_bucket="${HOPPIFY_S3_BUCKET:-hoppify}"
+    local s3_region="${HOPPIFY_S3_REGION:-us-east-1}"
+    local s3_endpoint_url="${HOPPIFY_S3_ENDPOINT_URL:-}"
+    local s3_access_key_id="${HOPPIFY_S3_ACCESS_KEY_ID:-}"
+    local s3_secret_access_key="${HOPPIFY_S3_SECRET_ACCESS_KEY:-}"
+    local s3_session_token="${HOPPIFY_S3_SESSION_TOKEN:-}"
+    local s3_force_path_style="${HOPPIFY_S3_FORCE_PATH_STYLE:-false}"
+    local database_dsn
+
+    database_dsn="host=postgres port=5432 dbname=$hoppify_postgres_db user=$hoppify_postgres_user password=$hoppify_postgres_password sslmode=disable"
+
+    cat > "$path" <<EOF_CONFIG
+app:
+  name: hoppify
+  env: prod
+
+http:
+  addr: ":3000"
+
+logger:
+  level: info
+  encoding: json
+  development: false
+
+database:
+  dsn: $(yaml_quote "$database_dsn")
+  max_open_conns: 8
+  max_idle_conns: 4
+  conn_max_lifetime: 30m
+  conn_max_idle_time: 5m
+  connect_timeout: 5s
+
+s3:
+  bucket: $(yaml_quote "$s3_bucket")
+  region: $(yaml_quote "$s3_region")
+  endpoint_url: $(yaml_quote "$s3_endpoint_url")
+  access_key_id: $(yaml_quote "$s3_access_key_id")
+  secret_access_key: $(yaml_quote "$s3_secret_access_key")
+  session_token: $(yaml_quote "$s3_session_token")
+  force_path_style: $s3_force_path_style
+
+upload:
+  max_files: 10
+  max_file_bytes: 15728640
+  max_request_bytes: 157286400
+  jpeg_quality: 95
+
+observability:
+  service_name: hoppify
+  metrics:
+    addr: ":3001"
+    path: "/metrics"
+EOF_CONFIG
+}
+
 write_env_var() {
     local path="$1"
     local name="$2"
@@ -173,6 +233,16 @@ generate_compose_env_file() {
     write_env_var "$path" GRAFANA_ADMIN_PASSWORD "$GRAFANA_ADMIN_PASSWORD"
     write_env_var "$path" GOOSE_RUNNER_IMAGE "${GOOSE_RUNNER_IMAGE:-ghcr.io/chistopat/kailas-goose:v3.27.1}"
     write_env_var "$path" GOOSE_VERSION "${GOOSE_VERSION:-v3.27.1}"
+    write_env_var "$path" HOPPIFY_POSTGRES_DB "${HOPPIFY_POSTGRES_DB:-hoppify}"
+    write_env_var "$path" HOPPIFY_POSTGRES_USER "${HOPPIFY_POSTGRES_USER:-hoppify}"
+    write_env_var "$path" HOPPIFY_POSTGRES_PASSWORD "${HOPPIFY_POSTGRES_PASSWORD:-$POSTGRES_PASSWORD}"
+    write_env_var "$path" HOPPIFY_S3_BUCKET "${HOPPIFY_S3_BUCKET:-hoppify}"
+    write_env_var "$path" HOPPIFY_S3_REGION "${HOPPIFY_S3_REGION:-us-east-1}"
+    write_env_var "$path" HOPPIFY_S3_ENDPOINT_URL "${HOPPIFY_S3_ENDPOINT_URL:-}"
+    write_env_var "$path" HOPPIFY_S3_ACCESS_KEY_ID "${HOPPIFY_S3_ACCESS_KEY_ID:-}"
+    write_env_var "$path" HOPPIFY_S3_SECRET_ACCESS_KEY "${HOPPIFY_S3_SECRET_ACCESS_KEY:-}"
+    write_env_var "$path" HOPPIFY_S3_SESSION_TOKEN "${HOPPIFY_S3_SESSION_TOKEN:-}"
+    write_env_var "$path" HOPPIFY_S3_FORCE_PATH_STYLE "${HOPPIFY_S3_FORCE_PATH_STYLE:-false}"
     write_env_var "$path" WATCHTOWER_INTERVAL "${WATCHTOWER_INTERVAL:-300}"
     write_env_var "$path" GHCR_USERNAME "${GHCR_USERNAME:-}"
     write_env_var "$path" GHCR_TOKEN "${GHCR_TOKEN:-}"
@@ -208,15 +278,18 @@ scp_opts=(-i "$ssh_key" -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-ne
 tmpdir="$(mktemp -d)"
 trap 'rm -rf "$tmpdir"' EXIT
 
-mkdir -p "$tmpdir/deployment" "$tmpdir/gateway" "$tmpdir/apps/fsqr/migrations"
+mkdir -p "$tmpdir/deployment" "$tmpdir/gateway" "$tmpdir/apps/fsqr/migrations" "$tmpdir/apps/hoppify/migrations"
 cp "$compose_file" "$tmpdir/deployment/compose.prod.yml"
 cp "$caddyfile" "$tmpdir/gateway/Caddyfile.prod"
 cp -R "$observability_dir" "$tmpdir/observability"
 generate_compose_env_file "$tmpdir/.env"
 generate_config_file "$tmpdir/apps/fsqr/config.yaml"
+generate_hoppify_config_file "$tmpdir/apps/hoppify/config.yaml"
 cp "$repo_root"/apps/fsqr/migrations/*.sql "$tmpdir/apps/fsqr/migrations/"
+cp "$repo_root"/apps/hoppify/migrations/*.sql "$tmpdir/apps/hoppify/migrations/"
 chmod 600 "$tmpdir/.env"
 chmod 644 "$tmpdir/apps/fsqr/config.yaml"
+chmod 644 "$tmpdir/apps/hoppify/config.yaml"
 
 log "waiting for ssh: $target"
 wait_for_ssh "$target"
@@ -252,6 +325,7 @@ done
 cd "$APP_DIR"
 chmod 600 .env
 chmod 644 apps/fsqr/config.yaml
+chmod 644 apps/hoppify/config.yaml
 
 set -a
 # The generated .env quotes values, so source it instead of parsing raw lines.

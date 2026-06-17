@@ -41,8 +41,12 @@ services:
   hoppify:
     image: ${HOPPIFY_IMAGE:-ghcr.io/chistopat/hoppify:latest}
     environment:
-      HOPPIFY_ENV: prod
-      HOPPIFY_HTTP_ADDR: ":3000"
+      HOPPIFY_CONFIG_FILE: /app/config/config.yaml
+    volumes:
+      - ../apps/hoppify/config.yaml:/app/config/config.yaml:ro
+    depends_on:
+      create-hoppify-db:
+        condition: service_completed_successfully
     labels:
       com.centurylinklabs.watchtower.enable: "true"
     restart: unless-stopped
@@ -61,6 +65,44 @@ services:
       timeout: 5s
       retries: 10
     restart: unless-stopped
+
+  create-hoppify-db:
+    image: ${POSTGRES_IMAGE:-pgvector/pgvector:pg18-bookworm}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      PGHOST: postgres
+      PGUSER: ${POSTGRES_USER:-fsqr}
+      PGPASSWORD: ${POSTGRES_PASSWORD}
+      HOPPIFY_POSTGRES_DB: ${HOPPIFY_POSTGRES_DB:-hoppify}
+      HOPPIFY_POSTGRES_USER: ${HOPPIFY_POSTGRES_USER:-hoppify}
+      HOPPIFY_POSTGRES_PASSWORD: ${HOPPIFY_POSTGRES_PASSWORD:-${POSTGRES_PASSWORD}}
+    entrypoint:
+      - /bin/sh
+      - -c
+    command:
+      - |
+        set -eu
+        psql -v ON_ERROR_STOP=1 -d postgres \
+          -v db="$${HOPPIFY_POSTGRES_DB}" \
+          -v app_user="$${HOPPIFY_POSTGRES_USER}" \
+          -v app_password="$${HOPPIFY_POSTGRES_PASSWORD}" <<'SQL'
+        SELECT format('CREATE ROLE %I LOGIN PASSWORD %L', :'app_user', :'app_password')
+        WHERE NOT EXISTS (
+            SELECT 1 FROM pg_roles WHERE rolname = :'app_user'
+        )
+        \gexec
+        SELECT format('ALTER ROLE %I WITH LOGIN PASSWORD %L', :'app_user', :'app_password')
+        \gexec
+        SELECT format('CREATE DATABASE %I OWNER %I', :'db', :'app_user')
+        WHERE NOT EXISTS (
+            SELECT 1 FROM pg_database WHERE datname = :'db'
+        )
+        \gexec
+        SELECT format('ALTER DATABASE %I OWNER TO %I', :'db', :'app_user')
+        \gexec
+        SQL
 
   tei:
     image: ${TEI_IMAGE:-ghcr.io/huggingface/text-embeddings-inference:cpu-1.9}
@@ -129,6 +171,27 @@ services:
       PGDATABASE: ${POSTGRES_DB:-fsqr}
     volumes:
       - ../apps/fsqr/migrations:/migrations:ro
+    entrypoint:
+      - /bin/sh
+      - -c
+    command:
+      - |
+        set -eu
+        dsn="postgres://$${PGUSER}:$${PGPASSWORD}@$${PGHOST}:5432/$${PGDATABASE}?sslmode=disable"
+        exec goose -dir /migrations postgres "$${dsn}" up
+
+  migrate-hoppify:
+    image: ${GOOSE_RUNNER_IMAGE:-ghcr.io/chistopat/kailas-goose:v3.27.1}
+    depends_on:
+      create-hoppify-db:
+        condition: service_completed_successfully
+    environment:
+      PGHOST: postgres
+      PGUSER: ${HOPPIFY_POSTGRES_USER:-hoppify}
+      PGPASSWORD: ${HOPPIFY_POSTGRES_PASSWORD:-${POSTGRES_PASSWORD}}
+      PGDATABASE: ${HOPPIFY_POSTGRES_DB:-hoppify}
+    volumes:
+      - ../apps/hoppify/migrations:/migrations:ro
     entrypoint:
       - /bin/sh
       - -c

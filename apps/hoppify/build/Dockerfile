@@ -6,9 +6,11 @@ FROM golang:${GO_VERSION}-alpine AS builder
 
 WORKDIR /src
 
-COPY go.mod ./
+COPY go.mod go.sum ./
 RUN go mod download
 
+COPY api ./api
+COPY config ./config
 COPY cmd ./cmd
 COPY internal ./internal
 
@@ -23,6 +25,7 @@ COPY --from=builder /out/hoppify /app/hoppify
 ENV HOPPIFY_ENV=prod
 
 EXPOSE 3000
+EXPOSE 3001
 
 USER nonroot:nonroot
 

@@ -33,6 +33,9 @@ GRAFANA_DOMAIN=grafana.fsqr.kailas.cloud
 FSQR_DNS_ZONE=kailas.cloud
 POSTGRES_DB=fsqr
 POSTGRES_USER=fsqr
+HOPPIFY_POSTGRES_DB=hoppify
+HOPPIFY_POSTGRES_USER=hoppify
+HOPPIFY_POSTGRES_PASSWORD=...
 FSQR_EMBEDDINGS_API_KEY=tei-local
 FSQR_WEB_MAPBOX_ACCESS_TOKEN=pk...
 FSQR_WEB_MAPBOX_STYLE=mapbox/light-v11
@@ -51,6 +54,13 @@ GRAFANA_ADMIN_USER=admin
 GRAFANA_ADMIN_PASSWORD=...
 GOOSE_RUNNER_IMAGE=ghcr.io/chistopat/kailas-goose:v3.27.1
 GOOSE_VERSION=v3.27.1
+HOPPIFY_S3_BUCKET=hoppify
+HOPPIFY_S3_REGION=us-east-1
+HOPPIFY_S3_ENDPOINT_URL=
+HOPPIFY_S3_ACCESS_KEY_ID=
+HOPPIFY_S3_SECRET_ACCESS_KEY=
+HOPPIFY_S3_SESSION_TOKEN=
+HOPPIFY_S3_FORCE_PATH_STYLE=false
 WATCHTOWER_INTERVAL=300
 GHCR_USERNAME=
 GHCR_TOKEN=
@@ -121,10 +131,11 @@ Run migrations independently after bootstrap:
 just migrate
 ```
 
-The migrate command syncs local `apps/fsqr/migrations/*.sql` and the production
-Compose file to the server, then runs the production Compose `migrate-fsqr`
-service. The service uses the pinned `ghcr.io/chistopat/kailas-goose:v3.27.1` image and records
-applied migrations in Postgres. Use it before relying on Watchtower for
+The migrate command syncs local `apps/fsqr/migrations/*.sql`,
+`apps/hoppify/migrations/*.sql`, and the production Compose file to the server,
+then runs the production Compose `migrate-fsqr` and `migrate-hoppify` services.
+The services use the pinned `ghcr.io/chistopat/kailas-goose:v3.27.1` image and
+record applied migrations in Postgres. Use it before relying on Watchtower for
 schema-changing releases.
 
 Useful overrides:
