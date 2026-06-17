@@ -24,7 +24,7 @@ jobs:
       packages: write
     env:
       GOOSE_VERSION: v3.27.1
-      GOOSE_IMAGE: ghcr.io/${{ github.repository_owner }}/fsqr-goose
+      GOOSE_IMAGE: ghcr.io/${{ github.repository_owner }}/kailas-goose
     steps:
       - name: Checkout code
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
@@ -44,7 +44,7 @@ jobs:
             --label "org.opencontainers.image.source=https://github.com/${GITHUB_REPOSITORY}" \
             --label "org.opencontainers.image.revision=${GITHUB_SHA}" \
             --label "org.opencontainers.image.version=${GOOSE_VERSION}" \
-            -f build/goose.Dockerfile \
+            -f deployment/goose.Dockerfile \
             -t "${GOOSE_IMAGE}:${GOOSE_VERSION}" \
             -t "${GOOSE_IMAGE}:latest" \
             --push \
@@ -56,7 +56,7 @@ jobs:
           docker buildx build \
             --platform linux/amd64 \
             --build-arg "GOOSE_VERSION=${GOOSE_VERSION}" \
-            -f build/goose.Dockerfile \
+            -f deployment/goose.Dockerfile \
             -t "${GOOSE_IMAGE}:${GOOSE_VERSION}" \
             --load \
             .
@@ -73,12 +73,13 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6
         with:
-          go-version-file: go.mod
+          go-version-file: apps/fsqr/go.mod
           cache: true
+          cache-dependency-path: apps/fsqr/go.sum
 
       - name: Check gofmt
         run: |
-          files="$(gofmt -l $(find . -name '*.go' -not -path './vendor/*'))"
+          files="$(gofmt -l $(find apps/fsqr -name '*.go' -not -path './vendor/*'))"
           if [ -n "$files" ]; then
             echo "Files are not gofmt-formatted:"
             echo "$files"
@@ -86,19 +87,34 @@ jobs:
           fi
 
       - name: Run golangci-lint
-        run: go run github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.8.0 run ./... --timeout=5m
+        working-directory: apps/fsqr
+        run: GOWORK=off go run github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.8.0 run ./... --timeout=5m
 
       - name: Run go vet
+        working-directory: apps/fsqr
         run: go vet ./...
 
       - name: Run unit tests
+        working-directory: apps/fsqr
         run: go test ./...
 
       - name: Run release script tests
         run: python3 -m unittest scripts/next_release_test.py
 
+      - name: Validate compose files
+        env:
+          FSQR_DOMAIN: fsqr.example.test
+          GRAFANA_DOMAIN: grafana.fsqr.example.test
+          POSTGRES_PASSWORD: fsqr
+          GRAFANA_ADMIN_PASSWORD: admin
+        run: |
+          docker compose -f deployment/compose.local.yml config >/dev/null
+          docker compose -f deployment/compose.e2e.yml config >/dev/null
+          docker compose -f deployment/compose.prod.yml config >/dev/null
+
       - name: Build binary
-        run: go build -trimpath -o bin/fsqr ./cmd/fsqr
+        working-directory: apps/fsqr
+        run: go build -trimpath -o ../../bin/fsqr ./cmd/fsqr
 
   e2e:
     name: Docker Compose E2E
@@ -115,7 +131,7 @@ jobs:
       TEI_IMAGE: ghcr.io/huggingface/text-embeddings-inference:cpu-1.9
       TEI_PLATFORM: linux/amd64
       TEI_DOCKERFILE: Dockerfile
-      GOOSE_RUNNER_IMAGE: ghcr.io/${{ github.repository_owner }}/fsqr-goose:v3.27.1
+      GOOSE_RUNNER_IMAGE: ghcr.io/${{ github.repository_owner }}/kailas-goose:v3.27.1
     permissions:
       contents: read
       packages: read
@@ -126,8 +142,9 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6
         with:
-          go-version-file: go.mod
+          go-version-file: apps/fsqr/go.mod
           cache: true
+          cache-dependency-path: apps/fsqr/go.sum
 
       - name: Restore TEI model cache
         uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
@@ -143,15 +160,15 @@ jobs:
       - name: Pull runtime images
         run: |
           docker pull "$TEI_IMAGE"
-          docker compose -f build/docker-compose.e2e.yml pull --policy missing postgres migrate
+          docker compose -f deployment/compose.e2e.yml pull --policy missing postgres
 
       - name: Build fsqr image
-        run: docker build -f build/fsqr.Dockerfile -t fsqr:local .
+        run: docker build -f apps/fsqr/build/Dockerfile -t fsqr:local apps/fsqr
 
       - name: Start e2e environment
         run: |
           set -euo pipefail
-          compose=(docker compose -f build/docker-compose.e2e.yml)
+          compose=(docker compose -f deployment/compose.e2e.yml)
 
           "${compose[@]}" up -d --no-build postgres tei
 
@@ -174,7 +191,7 @@ jobs:
           \gexec
           SQL
 
-          "${compose[@]}" run --rm migrate
+          "${compose[@]}" run --build --rm migrate-fsqr
           "${compose[@]}" up -d --no-build fsqr
 
       - name: Wait for services
@@ -207,20 +224,21 @@ jobs:
         env:
           BASE_URL: http://127.0.0.1:3000
           TEST_DATABASE_URL: postgres://fsqr:fsqr@127.0.0.1:5432/fsqr_test?sslmode=disable
+        working-directory: apps/fsqr
         run: go test -tags=e2e -count=1 -v ./tests
 
       - name: Dump e2e logs on failure
         if: failure()
         run: |
-          docker compose -f build/docker-compose.e2e.yml ps || true
-          docker compose -f build/docker-compose.e2e.yml logs --no-color postgres tei fsqr migrate || true
+          docker compose -f deployment/compose.e2e.yml ps || true
+          docker compose -f deployment/compose.e2e.yml logs --no-color postgres tei fsqr migrate-fsqr || true
 
       - name: Tear down e2e environment
         if: always()
-        run: docker compose -f build/docker-compose.e2e.yml down -v --remove-orphans || true
+        run: docker compose -f deployment/compose.e2e.yml down -v --remove-orphans || true
 
   publish:
-    name: Tag and Publish Image
+    name: Tag and Publish fsqr Image
     runs-on: ubuntu-24.04
     needs: e2e
     if: github.event_name == 'push' && github.ref == 'refs/heads/master'
@@ -247,9 +265,9 @@ jobs:
             --label "org.opencontainers.image.source=https://github.com/${GITHUB_REPOSITORY}" \
             --label "org.opencontainers.image.revision=${GITHUB_SHA}" \
             --label "org.opencontainers.image.version=${VERSION}" \
-            -f build/fsqr.Dockerfile \
+            -f apps/fsqr/build/Dockerfile \
             -t "${IMAGE}:${VERSION}" \
-            .
+            apps/fsqr
 
       - name: Login to GHCR
         env:
@@ -277,3 +295,33 @@ jobs:
             --target "$GITHUB_SHA" \
             --title "$VERSION" \
             --notes "Docker image: ${IMAGE}:${VERSION}"
+
+  deploy-smoke:
+    name: Watchtower Deploy Smoke Check
+    runs-on: ubuntu-24.04
+    needs: publish
+    if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+    timeout-minutes: 20
+    steps:
+      - name: Wait for fsqr deployment
+        env:
+          FSQR_DOMAIN: ${{ vars.FSQR_DOMAIN }}
+        run: |
+          set -euo pipefail
+
+          if [ -z "${FSQR_DOMAIN:-}" ]; then
+            echo "FSQR_DOMAIN repository variable is not set; skipping deploy smoke check"
+            exit 0
+          fi
+
+          url="https://${FSQR_DOMAIN}/live"
+          for attempt in {1..90}; do
+            if curl -fsS "$url" >/dev/null; then
+              echo "deployment smoke check passed: $url"
+              exit 0
+            fi
+            sleep 10
+          done
+
+          echo "deployment smoke check failed: $url did not become healthy" >&2
+          exit 1

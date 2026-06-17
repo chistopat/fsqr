@@ -47,11 +47,12 @@ PROMETHEUS_IMAGE=prom/prometheus:latest
 GRAFANA_IMAGE=grafana/grafana:latest
 GRAFANA_ADMIN_USER=admin
 GRAFANA_ADMIN_PASSWORD=...
-GOOSE_RUNNER_IMAGE=ghcr.io/chistopat/fsqr-goose:v3.27.1
+GOOSE_RUNNER_IMAGE=ghcr.io/chistopat/kailas-goose:v3.27.1
 GOOSE_VERSION=v3.27.1
 WATCHTOWER_INTERVAL=300
 GHCR_USERNAME=
 GHCR_TOKEN=
+KAILAS_COMPOSE_PROJECT=fsqr-prod
 ```
 
 From repository root:
@@ -100,11 +101,11 @@ just bootstrap
 
 The bootstrap command:
 
-- Resolves the server IPv4 from `tofu output -raw ipv4_address`, unless `FSQR_DEPLOY_HOST` is set.
+- Resolves the server IPv4 from `tofu output -raw ipv4_address`, unless `KAILAS_DEPLOY_HOST` or `FSQR_DEPLOY_HOST` is set.
 - Reads root `.env` as the only local secret source.
 - Generates a minimal `/opt/fsqr/.env` for Docker Compose secrets/interpolation.
-- Generates `/opt/fsqr/config.yaml` for application settings.
-- Copies `build/docker-compose.prod.yml` as `/opt/fsqr/compose.yml`, plus `Caddyfile.prod`, observability provisioning, dashboards, and SQL migrations.
+- Generates `/opt/fsqr/apps/fsqr/config.yaml` for application settings.
+- Copies `deployment/compose.prod.yml`, `gateway/Caddyfile.prod`, observability provisioning, dashboards, and fsqr SQL migrations into the same relative layout used in the repository.
 - Optionally logs in to GHCR when `GHCR_USERNAME` and `GHCR_TOKEN` are present in root `.env`.
 - Runs `docker compose pull` and starts the stack. It does not apply migrations.
 
@@ -118,19 +119,19 @@ Run migrations independently after bootstrap:
 just migrate
 ```
 
-The migrate command syncs local `migrations/*.sql` and the production Compose
-file to the server, then runs the production Compose `migrate` service. The
-service uses the pinned `ghcr.io/chistopat/fsqr-goose:v3.27.1` image and records
+The migrate command syncs local `apps/fsqr/migrations/*.sql` and the production
+Compose file to the server, then runs the production Compose `migrate-fsqr`
+service. The service uses the pinned `ghcr.io/chistopat/kailas-goose:v3.27.1` image and records
 applied migrations in Postgres. Use it before relying on Watchtower for
 schema-changing releases.
 
 Useful overrides:
 
 ```sh
-FSQR_DEPLOY_HOST=203.0.113.10 just bootstrap
-FSQR_DEPLOY_USER=deploy just bootstrap
-FSQR_DEPLOY_DIR=/opt/fsqr just bootstrap
-FSQR_ROOT_ENV_FILE=.env just bootstrap
+KAILAS_DEPLOY_HOST=203.0.113.10 just bootstrap
+KAILAS_DEPLOY_USER=deploy just bootstrap
+KAILAS_DEPLOY_DIR=/opt/fsqr just bootstrap
+KAILAS_ROOT_ENV_FILE=.env just bootstrap
 ```
 
 Set `FSQR_DOMAIN=fsqr.kailas.cloud` and

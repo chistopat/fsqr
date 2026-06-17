@@ -1,4 +1,4 @@
-name: fsqr-prod
+name: ${KAILAS_COMPOSE_PROJECT:-fsqr-prod}
 
 services:
   caddy:
@@ -15,7 +15,7 @@ services:
       FSQR_DOMAIN: ${FSQR_DOMAIN:?FSQR_DOMAIN must be set}
       GRAFANA_DOMAIN: ${GRAFANA_DOMAIN:?GRAFANA_DOMAIN must be set}
     volumes:
-      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - ../gateway/Caddyfile.prod:/etc/caddy/Caddyfile:ro
       - caddy-data:/data
       - caddy-config:/config
     restart: unless-stopped
@@ -25,7 +25,7 @@ services:
     environment:
       FSQR_CONFIG_FILE: /app/config/config.yaml
     volumes:
-      - ./config.yaml:/app/config/config.yaml:ro
+      - ../apps/fsqr/config.yaml:/app/config/config.yaml:ro
     depends_on:
       postgres:
         condition: service_healthy
@@ -78,7 +78,7 @@ services:
       - --storage.tsdb.path=/prometheus
       - --web.enable-lifecycle
     volumes:
-      - ./observability/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ../observability/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
       - prometheus-data:/prometheus
     depends_on:
       fsqr:
@@ -95,16 +95,16 @@ services:
       GF_USERS_DEFAULT_THEME: light
     volumes:
       - grafana-data:/var/lib/grafana
-      - ./observability/grafana/provisioning/datasources:/etc/grafana/provisioning/datasources:ro
-      - ./observability/grafana/provisioning/dashboards:/etc/grafana/provisioning/dashboards:ro
-      - ./observability/grafana/dashboards:/etc/grafana/dashboards:ro
+      - ../observability/grafana/provisioning/datasources:/etc/grafana/provisioning/datasources:ro
+      - ../observability/grafana/provisioning/dashboards:/etc/grafana/provisioning/dashboards:ro
+      - ../observability/grafana/dashboards:/etc/grafana/dashboards:ro
     depends_on:
       prometheus:
         condition: service_started
     restart: unless-stopped
 
-  migrate:
-    image: ${GOOSE_RUNNER_IMAGE:-ghcr.io/chistopat/fsqr-goose:v3.27.1}
+  migrate-fsqr:
+    image: ${GOOSE_RUNNER_IMAGE:-ghcr.io/chistopat/kailas-goose:v3.27.1}
     depends_on:
       postgres:
         condition: service_healthy
@@ -114,7 +114,7 @@ services:
       PGPASSWORD: ${POSTGRES_PASSWORD}
       PGDATABASE: ${POSTGRES_DB:-fsqr}
     volumes:
-      - ./migrations:/migrations:ro
+      - ../apps/fsqr/migrations:/migrations:ro
     entrypoint:
       - /bin/sh
       - -c

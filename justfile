@@ -1,7 +1,7 @@
 set dotenv-load := true
 
-compose := "docker compose -f build/docker-compose.yml"
-e2e_compose := "docker compose -f build/docker-compose.e2e.yml"
+compose := "docker compose -f deployment/compose.local.yml"
+e2e_compose := "docker compose -f deployment/compose.e2e.yml"
 fsqr_image := "fsqr:local"
 tei_url := "http://127.0.0.1:8080"
 postgres_psql := compose + " exec -T postgres psql -v ON_ERROR_STOP=1 -U \"${POSTGRES_USER:-fsqr}\" -d \"${POSTGRES_DB:-fsqr}\""
@@ -11,20 +11,20 @@ default:
     just --list
 
 service-build:
-    go build -o bin/fsqr ./cmd/fsqr
+    cd apps/fsqr && go build -o ../../bin/fsqr ./cmd/fsqr
 
 lint:
-    {{golangci_lint}} run ./... --timeout=5m
+    cd apps/fsqr && GOWORK=off {{golangci_lint}} run ./... --timeout=5m
 
 lint-fix:
-    {{golangci_lint}} run --fix ./... --timeout=5m
+    cd apps/fsqr && GOWORK=off {{golangci_lint}} run --fix ./... --timeout=5m
 
 pre-commit: service-build lint
-    go test ./...
-    go vet ./...
+    cd apps/fsqr && go test ./...
+    cd apps/fsqr && go vet ./...
 
 fsqr-docker-build tag=fsqr_image:
-    docker build -f build/fsqr.Dockerfile -t {{tag}} .
+    docker build -f apps/fsqr/build/Dockerfile -t {{tag}} apps/fsqr
 
 up:
     {{e2e_compose}} up -d --build postgres tei
@@ -83,7 +83,7 @@ postgres-psql:
     {{compose}} exec postgres psql -U "${POSTGRES_USER:-fsqr}" -d "${POSTGRES_DB:-fsqr}"
 
 postgres-migrate:
-    {{compose}} run --build --rm migrate
+    {{compose}} run --build --rm migrate-fsqr
 
 test-db-create:
     #!/usr/bin/env bash
@@ -112,7 +112,7 @@ test-postgres-wait:
     exit 1
 
 test-migrate: test-db-create
-    {{e2e_compose}} run --build --rm migrate
+    {{e2e_compose}} run --build --rm migrate-fsqr
 
 test-postgres-psql:
     {{e2e_compose}} exec postgres psql -U "${POSTGRES_USER:-fsqr}" -d "${TEST_POSTGRES_DB:-fsqr_test}"
@@ -146,7 +146,7 @@ test-e2e-wait:
     done
 
 test-e2e: up test-migrate test-e2e-wait
-    TEST_DATABASE_URL="${TEST_DATABASE_URL:-postgres://${POSTGRES_USER:-fsqr}:${POSTGRES_PASSWORD:-fsqr}@127.0.0.1:5432/${TEST_POSTGRES_DB:-fsqr_test}?sslmode=disable}" BASE_URL="${BASE_URL:-http://127.0.0.1:3000}" go test -tags=e2e -count=1 -v ./tests
+    cd apps/fsqr && TEST_DATABASE_URL="${TEST_DATABASE_URL:-postgres://${POSTGRES_USER:-fsqr}:${POSTGRES_PASSWORD:-fsqr}@127.0.0.1:5432/${TEST_POSTGRES_DB:-fsqr_test}?sslmode=disable}" BASE_URL="${BASE_URL:-http://127.0.0.1:3000}" go test -tags=e2e -count=1 -v ./tests
 
 places-migrate: postgres-migrate
 
@@ -201,10 +201,10 @@ migrate:
     #!/usr/bin/env bash
     set -euo pipefail
 
-    app_dir="${FSQR_DEPLOY_DIR:-/opt/fsqr}"
-    ssh_user="${FSQR_DEPLOY_USER:-deploy}"
-    ssh_key="${FSQR_DEPLOY_SSH_KEY:-.ssh/fsqr_hcloud_ed25519}"
-    remote_host="${FSQR_DEPLOY_HOST:-}"
+    app_dir="${KAILAS_DEPLOY_DIR:-${FSQR_DEPLOY_DIR:-/opt/fsqr}}"
+    ssh_user="${KAILAS_DEPLOY_USER:-${FSQR_DEPLOY_USER:-deploy}}"
+    ssh_key="${KAILAS_DEPLOY_SSH_KEY:-${FSQR_DEPLOY_SSH_KEY:-.ssh/fsqr_hcloud_ed25519}}"
+    remote_host="${KAILAS_DEPLOY_HOST:-${FSQR_DEPLOY_HOST:-}}"
 
     if [[ ! -f "$ssh_key" ]]; then
         echo "required file is missing: $ssh_key" >&2
@@ -213,7 +213,7 @@ migrate:
 
     if [[ -z "$remote_host" ]]; then
         if ! command -v tofu >/dev/null 2>&1; then
-            echo "tofu is required when FSQR_DEPLOY_HOST is not set" >&2
+            echo "tofu is required when KAILAS_DEPLOY_HOST/FSQR_DEPLOY_HOST is not set" >&2
             exit 1
         fi
         remote_host="$(tofu -chdir=deployment output -raw ipv4_address)"
@@ -229,14 +229,14 @@ migrate:
         echo ".env is missing in $APP_DIR; run just bootstrap first" >&2
         exit 1
     fi
-    mkdir -p "$APP_DIR/migrations"
+    mkdir -p "$APP_DIR/deployment" "$APP_DIR/apps/fsqr/migrations"
     EOF
 
-    rsync -az -e "$rsync_ssh" build/docker-compose.prod.yml "$target:$app_dir/compose.yml"
-    rsync -az --delete -e "$rsync_ssh" migrations/ "$target:$app_dir/migrations/"
+    rsync -az -e "$rsync_ssh" deployment/compose.prod.yml "$target:$app_dir/deployment/compose.prod.yml"
+    rsync -az --delete -e "$rsync_ssh" apps/fsqr/migrations/ "$target:$app_dir/apps/fsqr/migrations/"
 
     ssh "${ssh_opts[@]}" "$target" APP_DIR="$app_dir" 'bash -s' <<'EOF'
     set -euo pipefail
     cd "$APP_DIR"
-    docker compose run --rm migrate
+    docker compose --env-file .env -f deployment/compose.prod.yml run --rm migrate-fsqr
     EOF

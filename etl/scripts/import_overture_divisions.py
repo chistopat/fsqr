@@ -213,7 +213,7 @@ def check_target_table(conn: psycopg.Connection[Any]) -> None:
         cur.execute("SELECT to_regclass('public.geo_features')")
         if cur.fetchone()[0] is None:
             raise RuntimeError(
-                "public.geo_features does not exist; run migrations/004_create_geo_features.sql first"
+                "public.geo_features does not exist; run apps/fsqr/migrations/004_create_geo_features.sql first"
             )
 
 

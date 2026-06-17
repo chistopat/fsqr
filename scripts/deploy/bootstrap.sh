@@ -5,14 +5,14 @@ script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 repo_root="$(cd "$script_dir/../.." && pwd)"
 deployment_dir="$repo_root/deployment"
 
-app_dir="${FSQR_DEPLOY_DIR:-/opt/fsqr}"
-ssh_user="${FSQR_DEPLOY_USER:-deploy}"
-ssh_key="${FSQR_DEPLOY_SSH_KEY:-$repo_root/.ssh/fsqr_hcloud_ed25519}"
-env_file="${FSQR_ROOT_ENV_FILE:-$repo_root/.env}"
-compose_file="$repo_root/build/docker-compose.prod.yml"
-caddyfile="$deployment_dir/Caddyfile.prod"
+app_dir="${KAILAS_DEPLOY_DIR:-${FSQR_DEPLOY_DIR:-/opt/fsqr}}"
+ssh_user="${KAILAS_DEPLOY_USER:-${FSQR_DEPLOY_USER:-deploy}}"
+ssh_key="${KAILAS_DEPLOY_SSH_KEY:-${FSQR_DEPLOY_SSH_KEY:-$repo_root/.ssh/fsqr_hcloud_ed25519}}"
+env_file="${KAILAS_ROOT_ENV_FILE:-${FSQR_ROOT_ENV_FILE:-$repo_root/.env}}"
+compose_file="$deployment_dir/compose.prod.yml"
+caddyfile="$repo_root/gateway/Caddyfile.prod"
 observability_dir="$repo_root/observability"
-remote_host="${FSQR_DEPLOY_HOST:-}"
+remote_host="${KAILAS_DEPLOY_HOST:-${FSQR_DEPLOY_HOST:-}}"
 
 log() {
     printf '[bootstrap] %s\n' "$*" >&2
@@ -33,13 +33,13 @@ resolve_host() {
     fi
 
     if ! command -v tofu >/dev/null 2>&1; then
-        echo "tofu is required when FSQR_DEPLOY_HOST is not set" >&2
+        echo "tofu is required when KAILAS_DEPLOY_HOST/FSQR_DEPLOY_HOST is not set" >&2
         exit 1
     fi
 
     local output
     if ! output="$(tofu -chdir="$deployment_dir" output -raw ipv4_address 2>/dev/null)" || [[ -z "$output" ]]; then
-        echo "could not resolve server IPv4; set FSQR_DEPLOY_HOST or run tofu apply first" >&2
+        echo "could not resolve server IPv4; set KAILAS_DEPLOY_HOST/FSQR_DEPLOY_HOST or run tofu apply first" >&2
         exit 1
     fi
     printf '%s\n' "$output"
@@ -151,6 +151,7 @@ generate_compose_env_file() {
     local path="$1"
 
     : > "$path"
+    write_env_var "$path" KAILAS_COMPOSE_PROJECT "${KAILAS_COMPOSE_PROJECT:-fsqr-prod}"
     write_env_var "$path" FSQR_IMAGE "${FSQR_IMAGE:-ghcr.io/chistopat/fsqr:latest}"
     write_env_var "$path" FSQR_DOMAIN "$FSQR_DOMAIN"
     write_env_var "$path" GRAFANA_DOMAIN "${GRAFANA_DOMAIN:-grafana.$FSQR_DOMAIN}"
@@ -167,7 +168,7 @@ generate_compose_env_file() {
     write_env_var "$path" GRAFANA_IMAGE "${GRAFANA_IMAGE:-grafana/grafana:latest}"
     write_env_var "$path" GRAFANA_ADMIN_USER "${GRAFANA_ADMIN_USER:-admin}"
     write_env_var "$path" GRAFANA_ADMIN_PASSWORD "$GRAFANA_ADMIN_PASSWORD"
-    write_env_var "$path" GOOSE_RUNNER_IMAGE "${GOOSE_RUNNER_IMAGE:-ghcr.io/chistopat/fsqr-goose:v3.27.1}"
+    write_env_var "$path" GOOSE_RUNNER_IMAGE "${GOOSE_RUNNER_IMAGE:-ghcr.io/chistopat/kailas-goose:v3.27.1}"
     write_env_var "$path" GOOSE_VERSION "${GOOSE_VERSION:-v3.27.1}"
     write_env_var "$path" WATCHTOWER_INTERVAL "${WATCHTOWER_INTERVAL:-300}"
     write_env_var "$path" GHCR_USERNAME "${GHCR_USERNAME:-}"
@@ -204,15 +205,15 @@ scp_opts=(-i "$ssh_key" -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-ne
 tmpdir="$(mktemp -d)"
 trap 'rm -rf "$tmpdir"' EXIT
 
-mkdir -p "$tmpdir/migrations"
-cp "$compose_file" "$tmpdir/compose.yml"
-cp "$caddyfile" "$tmpdir/Caddyfile"
+mkdir -p "$tmpdir/deployment" "$tmpdir/gateway" "$tmpdir/apps/fsqr/migrations"
+cp "$compose_file" "$tmpdir/deployment/compose.prod.yml"
+cp "$caddyfile" "$tmpdir/gateway/Caddyfile.prod"
 cp -R "$observability_dir" "$tmpdir/observability"
 generate_compose_env_file "$tmpdir/.env"
-generate_config_file "$tmpdir/config.yaml"
-cp "$repo_root"/migrations/*.sql "$tmpdir/migrations/"
+generate_config_file "$tmpdir/apps/fsqr/config.yaml"
+cp "$repo_root"/apps/fsqr/migrations/*.sql "$tmpdir/apps/fsqr/migrations/"
 chmod 600 "$tmpdir/.env"
-chmod 644 "$tmpdir/config.yaml"
+chmod 644 "$tmpdir/apps/fsqr/config.yaml"
 
 log "waiting for ssh: $target"
 wait_for_ssh "$target"
@@ -247,7 +248,7 @@ done
 
 cd "$APP_DIR"
 chmod 600 .env
-chmod 644 config.yaml
+chmod 644 apps/fsqr/config.yaml
 
 set -a
 # The generated .env quotes values, so source it instead of parsing raw lines.
@@ -261,9 +262,9 @@ if [[ -n "$ghcr_user" && -n "$ghcr_token" ]]; then
     printf '%s' "$ghcr_token" | docker login ghcr.io -u "$ghcr_user" --password-stdin >/dev/null
 fi
 
-docker compose pull fsqr caddy postgres tei prometheus grafana watchtower
-docker compose up -d postgres tei
-docker compose up -d --remove-orphans fsqr prometheus grafana caddy watchtower
+docker compose --env-file .env -f deployment/compose.prod.yml pull fsqr caddy postgres tei prometheus grafana watchtower
+docker compose --env-file .env -f deployment/compose.prod.yml up -d postgres tei
+docker compose --env-file .env -f deployment/compose.prod.yml up -d --remove-orphans fsqr prometheus grafana caddy watchtower
 EOF_REMOTE
 
 log "bootstrap completed: ssh $target, app dir $app_dir"

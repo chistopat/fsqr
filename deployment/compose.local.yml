@@ -1,11 +1,11 @@
-name: fsqr
+name: kailas
 
 services:
   fsqr:
     image: ${FSQR_IMAGE:-fsqr:local}
     build:
-      context: ..
-      dockerfile: build/fsqr.Dockerfile
+      context: ../apps/fsqr
+      dockerfile: build/Dockerfile
     ports:
       - "${FSQR_HOST_PORT:-127.0.0.1:3000}:3000"
     environment:
@@ -53,8 +53,8 @@ services:
       retries: 5
     restart: unless-stopped
 
-  migrate:
-    image: ${GOOSE_RUNNER_IMAGE:-fsqr-goose:local}
+  migrate-fsqr:
+    image: ${GOOSE_RUNNER_IMAGE:-kailas-goose:local}
     build:
       context: .
       dockerfile: goose.Dockerfile
@@ -69,7 +69,7 @@ services:
       PGPASSWORD: ${POSTGRES_PASSWORD:-fsqr}
       PGDATABASE: ${POSTGRES_DB:-fsqr}
     volumes:
-      - ../migrations:/migrations:ro
+      - ../apps/fsqr/migrations:/migrations:ro
     entrypoint:
       - /bin/sh
       - -c

@@ -10,12 +10,14 @@ fsqr is a fast semantic geosearch API and map UI for place discovery. It combine
 
 ## Stack
 
-- Go service rooted at `cmd/fsqr`.
+- Monorepo layout with applications under `apps/`.
+- `fsqr` Go service rooted at `apps/fsqr`.
 - PostgreSQL-backed search and place storage.
 - Foursquare OS Places as the POI source.
 - Overture Maps divisions as the planned geographic boundary/source layer.
 - Mapbox tiles for the hosted map UI when configured.
-- Leaflet web UI served from `internal/http/web`.
+- Leaflet web UI served from `apps/fsqr/internal/http/web`.
+- Shared gateway, deployment, and observability assets live in `gateway/`, `deployment/`, and `observability/`.
 
 ## Development
 
@@ -24,7 +26,7 @@ Use `just` as the main task runner:
 ```sh
 just service-build
 just lint
-go test ./...
+cd apps/fsqr && go test ./...
 ```
 
 Run the e2e stack:

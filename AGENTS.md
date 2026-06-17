@@ -2,21 +2,21 @@
 
 ## Project Structure & Module Organization
 
-This repository is a Go service rooted at `github.com/chistopat/fsqr`. The API entry point is `cmd/fsqr`; application code is under `internal/` for HTTP, services, repositories, models, config, logging, embeddings, and observability. SQL migrations are in `migrations/`, with repository query files beside code in `internal/repository/**`. Integration and e2e tests live in `tests/` with fixtures in `tests/fixtures/`. Docker files are in `build/`, deployment infrastructure in `deployment/`, configs in `config/`, OpenAPI in `api/openapi.yaml`, observability assets in `observability/`, and Python ETL tooling in `etl/`.
+This repository is a monorepo for the Kailas stack. Applications live under `apps/`; the existing fsqr Go module is rooted at `apps/fsqr` with module path `github.com/chistopat/fsqr`. Its API entry point is `apps/fsqr/cmd/fsqr`; application code is under `apps/fsqr/internal/` for HTTP, services, repositories, models, config, logging, embeddings, and observability. SQL migrations are in `apps/fsqr/migrations/`, with repository query files beside code in `apps/fsqr/internal/repository/**`. Integration and e2e tests live in `apps/fsqr/tests/` with fixtures in `apps/fsqr/tests/fixtures/`. App Docker files live in `apps/fsqr/build/`, shared compose/deployment files are in `deployment/`, gateway config is in `gateway/`, observability assets are in `observability/`, and Python ETL tooling remains in `etl/`.
 
 ## Build, Test, and Development Commands
 
 Use `just` as the main task runner:
 
-- `just service-build` builds `bin/fsqr` from `./cmd/fsqr`.
+- `just service-build` builds `bin/fsqr` from `./apps/fsqr/cmd/fsqr`.
 - `just lint` runs `golangci-lint` v2.8.0 with the repository config.
 - `just lint-fix` applies supported lint fixes.
-- `just pre-commit` builds, lints, runs `go test ./...`, and runs `go vet ./...`.
+- `just pre-commit` builds, lints, runs `go test ./...`, and runs `go vet ./...` inside `apps/fsqr`.
 - `just up` starts the e2e Postgres, TEI, and API stack.
-- `just test-e2e` starts services, migrates, waits, then runs `go test -tags=e2e -count=1 -v ./tests`.
+- `just test-e2e` starts services, migrates, waits, then runs `go test -tags=e2e -count=1 -v ./tests` inside `apps/fsqr`.
 - `just down` stops the e2e compose stack.
 
-For quick unit checks, run `go test ./...`.
+For quick unit checks, run `cd apps/fsqr && go test ./...`.
 
 ## Coding Style & Naming Conventions
 
@@ -24,7 +24,7 @@ Write idiomatic Go formatted with `gofmt` and `goimports`; CI rejects unformatte
 
 ## Testing Guidelines
 
-Unit tests are colocated with code in `internal/**`; broader API/database tests are in `tests/`. E2E tests require Docker Compose, Postgres, and TEI via `just test-e2e`. Update SQL fixtures in `tests/fixtures/` when repository behavior depends on seeded data. Release script tests run with `python3 -m unittest scripts/next_release_test.py`.
+Unit tests are colocated with code in `apps/fsqr/internal/**`; broader API/database tests are in `apps/fsqr/tests/`. E2E tests require Docker Compose, Postgres, and TEI via `just test-e2e`. Update SQL fixtures in `apps/fsqr/tests/fixtures/` when repository behavior depends on seeded data. Release script tests run with `python3 -m unittest scripts/next_release_test.py`.
 
 ## Commit & Pull Request Guidelines
 
@@ -32,4 +32,4 @@ Recent history uses short imperative commit messages, sometimes with a conventio
 
 ## Security & Configuration Tips
 
-Do not commit secrets from `.env`, deployment tokens, or generated private keys. Keep environment-specific settings in `config/*.yaml` and deployment variables in `deployment/variables.tf`. Prefer `just` recipes so required environment checks run consistently.
+Do not commit secrets from `.env`, deployment tokens, or generated private keys. Keep fsqr environment-specific settings in `apps/fsqr/config/*.yaml` and deployment variables in `deployment/variables.tf`. Prefer `just` recipes so required environment checks run consistently.

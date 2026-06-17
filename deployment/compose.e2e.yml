@@ -4,8 +4,8 @@ services:
   fsqr:
     image: ${FSQR_IMAGE:-fsqr:local}
     build:
-      context: ..
-      dockerfile: build/fsqr.Dockerfile
+      context: ../apps/fsqr
+      dockerfile: build/Dockerfile
     ports:
       - "${FSQR_HOST_PORT:-127.0.0.1:3000}:3000"
     environment:
@@ -78,8 +78,8 @@ services:
       HF_TOKEN: ${HF_TOKEN:-}
     restart: unless-stopped
 
-  migrate:
-    image: ${GOOSE_RUNNER_IMAGE:-fsqr-goose:e2e}
+  migrate-fsqr:
+    image: ${GOOSE_RUNNER_IMAGE:-kailas-goose:e2e}
     build:
       context: .
       dockerfile: goose.Dockerfile
@@ -94,7 +94,7 @@ services:
       PGPASSWORD: ${POSTGRES_PASSWORD:-fsqr}
       PGDATABASE: ${TEST_POSTGRES_DB:-fsqr_test}
     volumes:
-      - ../migrations:/migrations:ro
+      - ../apps/fsqr/migrations:/migrations:ro
     entrypoint:
       - /bin/sh
       - -c
