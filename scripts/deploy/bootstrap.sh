@@ -243,7 +243,7 @@ generate_compose_env_file() {
     write_env_var "$path" HOPPIFY_S3_SECRET_ACCESS_KEY "${HOPPIFY_S3_SECRET_ACCESS_KEY:-}"
     write_env_var "$path" HOPPIFY_S3_SESSION_TOKEN "${HOPPIFY_S3_SESSION_TOKEN:-}"
     write_env_var "$path" HOPPIFY_S3_FORCE_PATH_STYLE "${HOPPIFY_S3_FORCE_PATH_STYLE:-false}"
-    write_env_var "$path" WATCHTOWER_INTERVAL "${WATCHTOWER_INTERVAL:-300}"
+    write_env_var "$path" WATCHTOWER_INTERVAL "${WATCHTOWER_INTERVAL:-30}"
     write_env_var "$path" GHCR_USERNAME "${GHCR_USERNAME:-}"
     write_env_var "$path" GHCR_TOKEN "${GHCR_TOKEN:-}"
 }

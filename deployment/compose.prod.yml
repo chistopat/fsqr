@@ -215,7 +215,7 @@ services:
       - --label-enable
       - --cleanup
       - --interval
-      - ${WATCHTOWER_INTERVAL:-300}
+      - ${WATCHTOWER_INTERVAL:-30}
     environment:
       REPO_USER: ${GHCR_USERNAME:-}
       REPO_PASS: ${GHCR_TOKEN:-}
