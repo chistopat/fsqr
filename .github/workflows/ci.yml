@@ -75,7 +75,9 @@ jobs:
         with:
           go-version-file: apps/fsqr/go.mod
           cache: true
-          cache-dependency-path: apps/fsqr/go.sum
+          cache-dependency-path: |
+            apps/fsqr/go.sum
+            apps/hoppify/go.sum
 
       - name: Check gofmt
         run: |
@@ -213,6 +215,7 @@ jobs:
           SQL
 
           "${compose[@]}" run --build --rm migrate-fsqr
+          "${compose[@]}" run --build --rm migrate-hoppify
           "${compose[@]}" up -d --no-build fsqr hoppify
 
       - name: Wait for services
@@ -252,18 +255,29 @@ jobs:
             sleep 1
           done
 
-      - name: Run e2e tests
+      - name: Run fsqr e2e tests
         env:
           BASE_URL: http://127.0.0.1:3000
           TEST_DATABASE_URL: postgres://fsqr:fsqr@127.0.0.1:5432/fsqr_test?sslmode=disable
         working-directory: apps/fsqr
         run: GOWORK=off go test -tags=e2e -count=1 -v ./tests
 
+      - name: Run Hoppify e2e tests
+        env:
+          BASE_URL: http://127.0.0.1:3100
+          TEST_DATABASE_URL: postgres://hoppify:hoppify@127.0.0.1:5432/hoppify_test?sslmode=disable
+          HOPPIFY_METRICS_URL: http://127.0.0.1:3101/metrics
+          HOPPIFY_S3_ENDPOINT_URL: http://127.0.0.1:9000
+          HOPPIFY_S3_ACCESS_KEY_ID: minioadmin
+          HOPPIFY_S3_SECRET_ACCESS_KEY: minioadmin
+        working-directory: apps/hoppify
+        run: GOWORK=off go test -tags=e2e -count=1 -v ./tests
+
       - name: Dump e2e logs on failure
         if: failure()
         run: |
           docker compose -f deployment/compose.e2e.yml ps || true
-          docker compose -f deployment/compose.e2e.yml logs --no-color postgres tei fsqr hoppify migrate-fsqr || true
+          docker compose -f deployment/compose.e2e.yml logs --no-color postgres tei fsqr hoppify minio create-hoppify-db minio-create-bucket migrate-fsqr migrate-hoppify || true
 
       - name: Tear down e2e environment
         if: always()
