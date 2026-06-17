@@ -21,6 +21,7 @@ FROM gcr.io/distroless/static-debian12:nonroot
 WORKDIR /app
 
 COPY --from=builder /out/hoppify /app/hoppify
+COPY config ./config
 
 ENV HOPPIFY_ENV=prod
 
