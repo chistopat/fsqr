@@ -6,6 +6,7 @@ import (
 	"net/http"
 
 	captureservice "github.com/chistopat/hoppify/internal/service/captures"
+	cropservice "github.com/chistopat/hoppify/internal/service/crops"
 	detectservice "github.com/chistopat/hoppify/internal/service/detect"
 )
 
@@ -70,6 +71,27 @@ func writeDetectError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusInternalServerError, string(detectErr.Code), detectErr.Message)
 	default:
 		writeError(w, http.StatusInternalServerError, string(detectservice.InternalError), "internal server error")
+	}
+}
+
+func writeCropError(w http.ResponseWriter, err error) {
+	var cropErr *cropservice.Error
+	if !errors.As(err, &cropErr) {
+		writeError(w, http.StatusInternalServerError, string(cropservice.InternalError), "internal server error")
+		return
+	}
+
+	switch cropErr.Code {
+	case cropservice.InvalidRequest:
+		writeError(w, http.StatusBadRequest, string(cropErr.Code), cropErr.Message)
+	case cropservice.UnsupportedMediaType:
+		writeError(w, http.StatusUnsupportedMediaType, string(cropErr.Code), cropErr.Message)
+	case cropservice.StorageError:
+		writeError(w, http.StatusBadGateway, string(cropErr.Code), cropErr.Message)
+	case cropservice.NotFound:
+		writeError(w, http.StatusNotFound, string(cropErr.Code), cropErr.Message)
+	default:
+		writeError(w, http.StatusInternalServerError, string(cropservice.InternalError), "internal server error")
 	}
 }
 

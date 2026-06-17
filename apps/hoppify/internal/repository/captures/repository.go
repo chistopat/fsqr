@@ -73,12 +73,21 @@ func (repo *Repository) FindCaptureByUUID(ctx context.Context, id uuid.UUID) (ca
 	var metadata []byte
 	err := repo.db.QueryRowContext(
 		ctx,
-		`SELECT uuid, type, bucket, object_key, content_type, size_bytes, checksum_sha256, metadata
+		`SELECT uuid,
+			parent_uuid,
+			type,
+			bucket,
+			object_key,
+			content_type,
+			size_bytes,
+			checksum_sha256,
+			metadata
 		FROM captures
 		WHERE uuid = $1`,
 		id.String(),
 	).Scan(
 		&record.UUID,
+		&record.ParentUUID,
 		&record.Type,
 		&record.Bucket,
 		&record.ObjectKey,
@@ -107,6 +116,61 @@ func (repo *Repository) FindCaptureByUUID(ctx context.Context, id uuid.UUID) (ca
 	)
 
 	return record, nil
+}
+
+func (repo *Repository) FindCapturesByParentUUID(
+	ctx context.Context,
+	parentID uuid.UUID,
+) ([]capturemodel.Record, error) {
+	started := time.Now()
+	repo.log.Debug("pg find captures by parent started", zap.String("parent_uuid", parentID.String()))
+
+	rows, err := repo.db.QueryContext(
+		ctx,
+		`SELECT uuid,
+			parent_uuid,
+			type,
+			bucket,
+			object_key,
+			content_type,
+			size_bytes,
+			checksum_sha256,
+			metadata
+		FROM captures
+		WHERE parent_uuid = $1
+		ORDER BY object_key`,
+		parentID.String(),
+	)
+	if err != nil {
+		repo.log.Error("pg find captures by parent failed", zap.Error(err), zap.Duration("duration", time.Since(started)))
+		return nil, fmt.Errorf("query captures by parent uuid: %w", err)
+	}
+	defer func() {
+		_ = rows.Close()
+	}()
+
+	records := make([]capturemodel.Record, 0)
+	for rows.Next() {
+		record, err := scanCapture(rows)
+		if err != nil {
+			repo.log.Error("pg scan capture by parent failed", zap.Error(err), zap.Duration("duration", time.Since(started)))
+			return nil, err
+		}
+		records = append(records, record)
+	}
+	if err := rows.Err(); err != nil {
+		repo.log.Error("pg iterate captures by parent failed", zap.Error(err), zap.Duration("duration", time.Since(started)))
+		return nil, fmt.Errorf("iterate captures by parent uuid: %w", err)
+	}
+
+	repo.log.Debug(
+		"pg find captures by parent completed",
+		zap.String("parent_uuid", parentID.String()),
+		zap.Int("record_count", len(records)),
+		zap.Duration("duration", time.Since(started)),
+	)
+
+	return records, nil
 }
 
 func (repo *Repository) CaptureStats(ctx context.Context) (capturemodel.Stats, error) {
@@ -141,10 +205,12 @@ func insertCapture(ctx context.Context, tx *sql.Tx, record *capturemodel.Record)
 		return fmt.Errorf("marshal capture metadata: %w", err)
 	}
 
+	parentUUID := nullableParent(record)
 	_, err = tx.ExecContext(
 		ctx,
 		`INSERT INTO captures (
 			uuid,
+			parent_uuid,
 			type,
 			bucket,
 			object_key,
@@ -152,8 +218,9 @@ func insertCapture(ctx context.Context, tx *sql.Tx, record *capturemodel.Record)
 			size_bytes,
 			checksum_sha256,
 			metadata
-		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb)`,
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::jsonb)`,
 		record.UUID.String(),
+		parentUUID,
 		record.Type,
 		record.Bucket,
 		record.ObjectKey,
@@ -167,6 +234,42 @@ func insertCapture(ctx context.Context, tx *sql.Tx, record *capturemodel.Record)
 	}
 
 	return nil
+}
+
+type captureScanner interface {
+	Scan(dest ...any) error
+}
+
+func scanCapture(scanner captureScanner) (capturemodel.Record, error) {
+	var record capturemodel.Record
+	var metadata []byte
+	err := scanner.Scan(
+		&record.UUID,
+		&record.ParentUUID,
+		&record.Type,
+		&record.Bucket,
+		&record.ObjectKey,
+		&record.ContentType,
+		&record.SizeBytes,
+		&record.ChecksumSHA256,
+		&metadata,
+	)
+	if err != nil {
+		return capturemodel.Record{}, fmt.Errorf("scan capture: %w", err)
+	}
+	if err := json.Unmarshal(metadata, &record.Metadata); err != nil {
+		return capturemodel.Record{}, fmt.Errorf("decode capture metadata: %w", err)
+	}
+
+	return record, nil
+}
+
+func nullableParent(record *capturemodel.Record) any {
+	if !record.ParentUUID.Valid {
+		return nil
+	}
+
+	return record.ParentUUID.UUID.String()
 }
 
 func loggerOrNop(log *zap.Logger) *zap.Logger {

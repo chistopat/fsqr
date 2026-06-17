@@ -18,6 +18,7 @@ import (
 	"github.com/chistopat/hoppify/internal/logger"
 	capturerepo "github.com/chistopat/hoppify/internal/repository/captures"
 	captureservice "github.com/chistopat/hoppify/internal/service/captures"
+	cropservice "github.com/chistopat/hoppify/internal/service/crops"
 	detectservice "github.com/chistopat/hoppify/internal/service/detect"
 	"github.com/chistopat/hoppify/internal/storage"
 
@@ -89,12 +90,22 @@ func run() error {
 		return fmt.Errorf("init detect service: %w", err)
 	}
 
+	cropService, err := cropservice.NewService(repository, objectStorage, cropservice.Config{
+		MaxObjectBytes: cfg.Upload.Limits().MaxFileBytes,
+		JPEGQuality:    cfg.Upload.JPEGQuality,
+		MaxBoxes:       cfg.Detector.MaxDetections,
+	})
+	if err != nil {
+		return fmt.Errorf("init crops service: %w", err)
+	}
+
 	metrics := httpapi.NewMetrics(repository, appLogger.Named("metrics"))
 	server := &http.Server{
 		Addr: cfg.HTTP.Addr,
 		Handler: httpapi.NewHandler(
 			httpapi.WithCaptureService(captureService),
 			httpapi.WithDetectService(detectService),
+			httpapi.WithCropService(cropService),
 			httpapi.WithCaptureLimits(cfg.Upload.Limits()),
 			httpapi.WithLogger(appLogger.Named("http")),
 			httpapi.WithHTTPMetrics(metrics.HTTP),
