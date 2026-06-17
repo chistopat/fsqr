@@ -116,6 +116,7 @@ jobs:
       - name: Validate compose files
         env:
           FSQR_DOMAIN: fsqr.example.test
+          HOPPIFY_DOMAIN: hoppify.example.test
           GRAFANA_DOMAIN: grafana.fsqr.example.test
           POSTGRES_PASSWORD: fsqr
           GRAFANA_ADMIN_PASSWORD: admin
