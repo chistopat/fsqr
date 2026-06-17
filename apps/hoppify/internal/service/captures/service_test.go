@@ -164,7 +164,11 @@ func TestServiceCreatesSameCaptureForSameImage(t *testing.T) {
 		t.Fatalf("expected object upload to be retried idempotently, got %d puts", len(storage.puts))
 	}
 	if storage.puts[0].ObjectKey != storage.puts[1].ObjectKey {
-		t.Fatalf("expected same object key across retries, got %q and %q", storage.puts[0].ObjectKey, storage.puts[1].ObjectKey)
+		t.Fatalf(
+			"expected same object key across retries, got %q and %q",
+			storage.puts[0].ObjectKey,
+			storage.puts[1].ObjectKey,
+		)
 	}
 }
 

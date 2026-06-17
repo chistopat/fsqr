@@ -20,7 +20,7 @@ type CaptureRepository interface {
 
 type RecognitionRepository interface {
 	FindBeerLabelRecognition(ctx context.Context, captureID uuid.UUID) (beerlabelmodel.Record, error)
-	InsertBeerLabelRecognition(ctx context.Context, record beerlabelmodel.Record) error
+	InsertBeerLabelRecognition(ctx context.Context, record *beerlabelmodel.Record) error
 }
 
 type ObjectStorage interface {
@@ -111,8 +111,8 @@ func (svc *Service) Identify(ctx context.Context, rawUUID string) (beerlabelmode
 	if err != nil {
 		return beerlabelmodel.Response{}, newError(InferenceError, "beer label recognition failed", err)
 	}
-	result = normalizeResult(result)
-	if err := validateResult(result); err != nil {
+	normalizeResult(&result)
+	if err := validateResult(&result); err != nil {
 		return beerlabelmodel.Response{}, newError(InferenceError, "beer label recognition returned invalid result", err)
 	}
 
@@ -122,7 +122,7 @@ func (svc *Service) Identify(ctx context.Context, rawUUID string) (beerlabelmode
 		PromptVersion: svc.recognizer.PromptVersion(),
 		Result:        result,
 	}
-	if err := svc.recognitions.InsertBeerLabelRecognition(ctx, record); err != nil {
+	if err := svc.recognitions.InsertBeerLabelRecognition(ctx, &record); err != nil {
 		cached, findErr := svc.recognitions.FindBeerLabelRecognition(ctx, captureID)
 		if findErr == nil {
 			return beerlabelmodel.ResponseFromRecord(&cached, true), nil
@@ -147,7 +147,7 @@ func normalizeMaxObjectBytes(maxObjectBytes int64) int64 {
 	return maxObjectBytes
 }
 
-func normalizeResult(result beerlabelmodel.Result) beerlabelmodel.Result {
+func normalizeResult(result *beerlabelmodel.Result) {
 	result.Status = strings.TrimSpace(result.Status)
 	result.Container = strings.TrimSpace(result.Container)
 	if result.Evidence == nil {
@@ -156,11 +156,9 @@ func normalizeResult(result beerlabelmodel.Result) beerlabelmodel.Result {
 	for index := range result.Evidence {
 		result.Evidence[index] = strings.TrimSpace(result.Evidence[index])
 	}
-
-	return result
 }
 
-func validateResult(result beerlabelmodel.Result) error {
+func validateResult(result *beerlabelmodel.Result) error {
 	if !validStatus(result.Status) {
 		return fmt.Errorf("invalid status %q", result.Status)
 	}

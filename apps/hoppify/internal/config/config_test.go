@@ -17,21 +17,53 @@ func TestLoadLocalConfig(t *testing.T) {
 		t.Fatalf("load config: %v", err)
 	}
 
+	assertAppConfig(t, cfg)
+	assertDatabaseConfig(t, cfg)
+	assertS3Config(t, cfg)
+	assertUploadConfig(t, cfg)
+	assertDetectorConfig(t, cfg)
+	assertBeerLabelConfig(t, cfg)
+	assertObservabilityConfig(t, cfg)
+}
+
+func assertAppConfig(t *testing.T, cfg Config) {
+	t.Helper()
+
 	if cfg.App.Name != "hoppify" {
 		t.Fatalf("expected app name hoppify, got %q", cfg.App.Name)
 	}
+}
+
+func assertDatabaseConfig(t *testing.T, cfg Config) {
+	t.Helper()
+
 	if cfg.Database.DSN != "postgres://hoppify:hoppify@127.0.0.1:5432/hoppify_test?sslmode=disable" {
 		t.Fatalf("expected database dsn from env, got %q", cfg.Database.DSN)
 	}
 	if cfg.Database.ConnectTimeout != 5*time.Second {
 		t.Fatalf("expected postgres connect timeout 5s, got %s", cfg.Database.ConnectTimeout)
 	}
+}
+
+func assertS3Config(t *testing.T, cfg Config) {
+	t.Helper()
+
 	if cfg.S3.Bucket != "test-bucket" {
 		t.Fatalf("expected s3 bucket from env, got %q", cfg.S3.Bucket)
 	}
+}
+
+func assertUploadConfig(t *testing.T, cfg Config) {
+	t.Helper()
+
 	if cfg.Upload.Limits().MaxFiles != 10 {
 		t.Fatalf("expected max files 10, got %d", cfg.Upload.Limits().MaxFiles)
 	}
+}
+
+func assertDetectorConfig(t *testing.T, cfg Config) {
+	t.Helper()
+
 	if cfg.Detector.ModelPath != "models/sku110k-yolo11-s640.onnx" {
 		t.Fatalf("expected detector model path from config, got %q", cfg.Detector.ModelPath)
 	}
@@ -50,6 +82,11 @@ func TestLoadLocalConfig(t *testing.T) {
 	if cfg.Detector.MaxDetections != 300 {
 		t.Fatalf("expected detector max detections 300, got %d", cfg.Detector.MaxDetections)
 	}
+}
+
+func assertBeerLabelConfig(t *testing.T, cfg Config) {
+	t.Helper()
+
 	if cfg.BeerLabel.Model != "chatgpt-5.4-mini" {
 		t.Fatalf("expected beer label model chatgpt-5.4-mini, got %q", cfg.BeerLabel.Model)
 	}
@@ -59,6 +96,11 @@ func TestLoadLocalConfig(t *testing.T) {
 	if cfg.BeerLabel.OpenAITimeout != 30*time.Second {
 		t.Fatalf("expected beer label openai timeout 30s, got %s", cfg.BeerLabel.OpenAITimeout)
 	}
+}
+
+func assertObservabilityConfig(t *testing.T, cfg Config) {
+	t.Helper()
+
 	if cfg.Observability.Metrics.Path != "/metrics" {
 		t.Fatalf("expected metrics path /metrics, got %q", cfg.Observability.Metrics.Path)
 	}

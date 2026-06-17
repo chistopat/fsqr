@@ -15,7 +15,6 @@ import (
 	openaisdk "github.com/openai/openai-go"
 	"github.com/openai/openai-go/option"
 	"github.com/openai/openai-go/responses"
-	"github.com/openai/openai-go/shared"
 )
 
 const (
@@ -108,7 +107,7 @@ func (client *Client) newRequest(image []byte) responses.ResponseNewParams {
 	}
 
 	return responses.ResponseNewParams{
-		Model:             shared.ResponsesModel(client.model),
+		Model:             client.model,
 		Instructions:      openaisdk.String(strings.TrimSpace(beerLabelPrompt)),
 		Store:             openaisdk.Bool(false),
 		MaxOutputTokens:   openaisdk.Int(800),

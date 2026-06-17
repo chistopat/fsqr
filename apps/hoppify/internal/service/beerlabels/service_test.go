@@ -201,14 +201,14 @@ func (repo *fakeRecognitionRepository) FindBeerLabelRecognition(
 
 func (repo *fakeRecognitionRepository) InsertBeerLabelRecognition(
 	_ context.Context,
-	record beerlabelmodel.Record,
+	record *beerlabelmodel.Record,
 ) error {
 	if repo.err != nil {
 		return repo.err
 	}
 	repo.inserted++
 	record.CreatedAt = time.Unix(2, 0).UTC()
-	repo.record = record
+	repo.record = *record
 
 	return nil
 }

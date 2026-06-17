@@ -75,7 +75,11 @@ func (repo *Repository) FindBeerLabelRecognition(
 	return record, nil
 }
 
-func (repo *Repository) InsertBeerLabelRecognition(ctx context.Context, record beerlabelmodel.Record) error {
+func (repo *Repository) InsertBeerLabelRecognition(ctx context.Context, record *beerlabelmodel.Record) error {
+	if record == nil {
+		return fmt.Errorf("beer label recognition record is required")
+	}
+
 	started := time.Now()
 	repo.log.Info("pg insert beer label recognition started", zap.String("capture_uuid", record.CaptureUUID.String()))
 
@@ -98,7 +102,11 @@ func (repo *Repository) InsertBeerLabelRecognition(ctx context.Context, record b
 		string(result),
 	)
 	if err != nil {
-		repo.log.Error("pg insert beer label recognition failed", zap.Error(err), zap.Duration("duration", time.Since(started)))
+		repo.log.Error(
+			"pg insert beer label recognition failed",
+			zap.Error(err),
+			zap.Duration("duration", time.Since(started)),
+		)
 		return fmt.Errorf("insert beer label recognition: %w", err)
 	}
 

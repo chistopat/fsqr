@@ -11,6 +11,19 @@ import (
 	beerlabelmodel "github.com/chistopat/hoppify/internal/models/beerlabel"
 )
 
+const testResponseText = `{
+	"status":"identified",
+	"container":"bottle",
+	"beerName":"Punk IPA",
+	"brewery":"BrewDog",
+	"style":null,
+	"country":null,
+	"abv":5.4,
+	"confidence":0.82,
+	"evidence":["label text"],
+	"notes":null
+}`
+
 func TestClientUsesResponsesAPIWithImageAndJSONSchema(t *testing.T) {
 	t.Parallel()
 
@@ -40,7 +53,7 @@ func TestClientUsesResponsesAPIWithImageAndJSONSchema(t *testing.T) {
 				"status": "completed",
 				"content": []map[string]any{{
 					"type":        "output_text",
-					"text":        `{"status":"identified","container":"bottle","beerName":"Punk IPA","brewery":"BrewDog","style":null,"country":null,"abv":5.4,"confidence":0.82,"evidence":["label text"],"notes":null}`,
+					"text":        testResponseText,
 					"annotations": []any{},
 				}},
 			}},
