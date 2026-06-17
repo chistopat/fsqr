@@ -392,6 +392,63 @@ func TestIdentifyBeerLabelReturnsStructuredResponse(t *testing.T) {
 	}
 }
 
+func TestIdentifyBeerLabelV2UsesWebService(t *testing.T) {
+	t.Parallel()
+
+	expected := beerlabelmodel.Response{
+		UUID:          "0190b67a-dc55-769d-9d2e-92d6d29af3c7",
+		Model:         "gpt-5.4-mini",
+		PromptVersion: "beer-label-v2-web",
+		Cached:        false,
+		Result: beerlabelmodel.Result{
+			Status:     beerlabelmodel.StatusIdentified,
+			Container:  beerlabelmodel.ContainerCan,
+			Confidence: 0.9,
+			Evidence:   []string{"web verified label"},
+			WebSearch: &beerlabelmodel.WebSearchResult{
+				Used:    true,
+				Queries: []string{"label untappd"},
+				Sources: []beerlabelmodel.WebSource{{URL: "https://untappd.com/search"}},
+			},
+			Untappd: &beerlabelmodel.UntappdRecommendation{
+				Status:     beerlabelmodel.UntappdSearchRecommended,
+				SearchURL:  stringPtr("https://untappd.com/search?q=label"),
+				Confidence: 0.7,
+			},
+		},
+		CreatedAt: time.Unix(1, 0).UTC(),
+	}
+	v1 := &fakeBeerLabelService{}
+	v2 := &fakeBeerLabelService{response: expected}
+	handler := NewHandler(WithBeerLabelService(v1), WithBeerLabelWebService(v2))
+	request := httptest.NewRequest(
+		http.MethodPost,
+		"/api/v2/beer-labels/identify",
+		strings.NewReader(`{"uuid":"0190b67a-dc55-769d-9d2e-92d6d29af3c7"}`),
+	)
+	response := httptest.NewRecorder()
+
+	handler.ServeHTTP(response, request)
+
+	if response.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d with body %q", http.StatusOK, response.Code, response.Body.String())
+	}
+	if v1.uuid != "" {
+		t.Fatalf("expected v1 service not to be called, got %q", v1.uuid)
+	}
+	if v2.uuid != "0190b67a-dc55-769d-9d2e-92d6d29af3c7" {
+		t.Fatalf("expected v2 service uuid, got %q", v2.uuid)
+	}
+
+	var actual beerlabelmodel.Response
+	if err := json.Unmarshal(response.Body.Bytes(), &actual); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if actual.PromptVersion != expected.PromptVersion || actual.Result.Untappd == nil {
+		t.Fatalf("unexpected beer label v2 response: %#v", actual)
+	}
+}
+
 func TestIdentifyBeerLabelRejectsUnknownRequestFields(t *testing.T) {
 	t.Parallel()
 
@@ -557,6 +614,10 @@ func (service *fakeCaptureService) CreateCaptures(
 	}
 
 	return service.captures, nil
+}
+
+func stringPtr(value string) *string {
+	return &value
 }
 
 type multipartTestFile struct {

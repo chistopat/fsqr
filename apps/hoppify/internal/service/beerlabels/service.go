@@ -19,7 +19,11 @@ type CaptureRepository interface {
 }
 
 type RecognitionRepository interface {
-	FindBeerLabelRecognition(ctx context.Context, captureID uuid.UUID) (beerlabelmodel.Record, error)
+	FindBeerLabelRecognition(
+		ctx context.Context,
+		captureID uuid.UUID,
+		promptVersion string,
+	) (beerlabelmodel.Record, error)
 	InsertBeerLabelRecognition(ctx context.Context, record *beerlabelmodel.Record) error
 }
 
@@ -79,8 +83,9 @@ func (svc *Service) Identify(ctx context.Context, rawUUID string) (beerlabelmode
 	if err != nil {
 		return beerlabelmodel.Response{}, newError(InvalidRequest, "uuid must be a valid UUID", err)
 	}
+	promptVersion := svc.recognizer.PromptVersion()
 
-	cached, err := svc.recognitions.FindBeerLabelRecognition(ctx, captureID)
+	cached, err := svc.recognitions.FindBeerLabelRecognition(ctx, captureID, promptVersion)
 	if err == nil {
 		return beerlabelmodel.ResponseFromRecord(&cached, true), nil
 	}
@@ -123,7 +128,7 @@ func (svc *Service) Identify(ctx context.Context, rawUUID string) (beerlabelmode
 		Result:        result,
 	}
 	if err := svc.recognitions.InsertBeerLabelRecognition(ctx, &record); err != nil {
-		cached, findErr := svc.recognitions.FindBeerLabelRecognition(ctx, captureID)
+		cached, findErr := svc.recognitions.FindBeerLabelRecognition(ctx, captureID, promptVersion)
 		if findErr == nil {
 			return beerlabelmodel.ResponseFromRecord(&cached, true), nil
 		}
@@ -131,7 +136,7 @@ func (svc *Service) Identify(ctx context.Context, rawUUID string) (beerlabelmode
 		return beerlabelmodel.Response{}, newError(InternalError, "internal server error", err)
 	}
 
-	saved, err := svc.recognitions.FindBeerLabelRecognition(ctx, captureID)
+	saved, err := svc.recognitions.FindBeerLabelRecognition(ctx, captureID, promptVersion)
 	if err != nil {
 		return beerlabelmodel.Response{}, newError(InternalError, "internal server error", err)
 	}
@@ -150,12 +155,19 @@ func normalizeMaxObjectBytes(maxObjectBytes int64) int64 {
 func normalizeResult(result *beerlabelmodel.Result) {
 	result.Status = strings.TrimSpace(result.Status)
 	result.Container = strings.TrimSpace(result.Container)
+	trimOptionalString(&result.BeerName)
+	trimOptionalString(&result.Brewery)
+	trimOptionalString(&result.Style)
+	trimOptionalString(&result.Country)
+	trimOptionalString(&result.Notes)
 	if result.Evidence == nil {
 		result.Evidence = []string{}
 	}
 	for index := range result.Evidence {
 		result.Evidence[index] = strings.TrimSpace(result.Evidence[index])
 	}
+	normalizeWebSearchResult(result.WebSearch)
+	normalizeUntappdRecommendation(result.Untappd)
 }
 
 func validateResult(result *beerlabelmodel.Result) error {
@@ -167,6 +179,14 @@ func validateResult(result *beerlabelmodel.Result) error {
 	}
 	if result.Confidence < 0 || result.Confidence > 1 {
 		return fmt.Errorf("confidence must be between 0 and 1")
+	}
+	if result.Untappd != nil {
+		if !validUntappdStatus(result.Untappd.Status) {
+			return fmt.Errorf("invalid untappd status %q", result.Untappd.Status)
+		}
+		if result.Untappd.Confidence < 0 || result.Untappd.Confidence > 1 {
+			return fmt.Errorf("untappd confidence must be between 0 and 1")
+		}
 	}
 
 	return nil
@@ -195,4 +215,73 @@ func validContainer(container string) bool {
 	default:
 		return false
 	}
+}
+
+func validUntappdStatus(status string) bool {
+	switch status {
+	case beerlabelmodel.UntappdDirectMatch,
+		beerlabelmodel.UntappdSearchRecommended,
+		beerlabelmodel.UntappdAmbiguous,
+		beerlabelmodel.UntappdNotFound,
+		beerlabelmodel.UntappdNotApplicable:
+		return true
+	default:
+		return false
+	}
+}
+
+func trimOptionalString(value **string) {
+	if value == nil || *value == nil {
+		return
+	}
+	trimmed := strings.TrimSpace(**value)
+	if trimmed == "" {
+		*value = nil
+		return
+	}
+	*value = &trimmed
+}
+
+func normalizeWebSearchResult(result *beerlabelmodel.WebSearchResult) {
+	if result == nil {
+		return
+	}
+	if result.Queries == nil {
+		result.Queries = []string{}
+	}
+	queries := result.Queries[:0]
+	for _, query := range result.Queries {
+		query = strings.TrimSpace(query)
+		if query != "" {
+			queries = append(queries, query)
+		}
+	}
+	result.Queries = queries
+	if result.Sources == nil {
+		result.Sources = []beerlabelmodel.WebSource{}
+	}
+	sources := result.Sources[:0]
+	for _, source := range result.Sources {
+		source.URL = strings.TrimSpace(source.URL)
+		trimOptionalString(&source.Title)
+		if source.URL != "" {
+			sources = append(sources, source)
+		}
+	}
+	result.Sources = sources
+	if len(result.Queries) > 0 || len(result.Sources) > 0 {
+		result.Used = true
+	}
+}
+
+func normalizeUntappdRecommendation(recommendation *beerlabelmodel.UntappdRecommendation) {
+	if recommendation == nil {
+		return
+	}
+	recommendation.Status = strings.TrimSpace(recommendation.Status)
+	trimOptionalString(&recommendation.URL)
+	trimOptionalString(&recommendation.SearchURL)
+	trimOptionalString(&recommendation.Name)
+	trimOptionalString(&recommendation.Brewery)
+	trimOptionalString(&recommendation.Reason)
 }

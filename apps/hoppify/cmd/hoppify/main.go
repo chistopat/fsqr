@@ -106,7 +106,7 @@ func run() error {
 		return fmt.Errorf("init crops service: %w", err)
 	}
 
-	beerLabelRecognizer := newBeerLabelRecognizer(cfg.BeerLabel, appLogger.Named("beer_labels.openai"))
+	beerLabelRecognizer := newBeerLabelRecognizer(cfg.BeerLabel, appLogger.Named("beer_labels.openai"), false)
 	beerLabelService, err := beerlabelservice.NewService(
 		repository,
 		beerLabelRepository,
@@ -117,6 +117,17 @@ func run() error {
 	if err != nil {
 		return fmt.Errorf("init beer labels service: %w", err)
 	}
+	beerLabelWebRecognizer := newBeerLabelRecognizer(cfg.BeerLabel, appLogger.Named("beer_labels.openai_web"), true)
+	beerLabelWebService, err := beerlabelservice.NewService(
+		repository,
+		beerLabelRepository,
+		objectStorage,
+		beerLabelWebRecognizer,
+		beerlabelservice.Config{MaxObjectBytes: cfg.Upload.Limits().MaxFileBytes},
+	)
+	if err != nil {
+		return fmt.Errorf("init beer labels web service: %w", err)
+	}
 
 	metrics := httpapi.NewMetrics(repository, appLogger.Named("metrics"))
 	server := &http.Server{
@@ -126,6 +137,7 @@ func run() error {
 			httpapi.WithDetectService(detectService),
 			httpapi.WithCropService(cropService),
 			httpapi.WithBeerLabelService(beerLabelService),
+			httpapi.WithBeerLabelWebService(beerLabelWebService),
 			httpapi.WithCaptureLimits(cfg.Upload.Limits()),
 			httpapi.WithLogger(appLogger.Named("http")),
 			httpapi.WithHTTPMetrics(metrics.HTTP),
@@ -144,16 +156,22 @@ func run() error {
 func newBeerLabelRecognizer(
 	cfg config.BeerLabelConfig,
 	recognizerLog *zap.Logger,
+	webSearch bool,
 ) beerlabelservice.Recognizer {
 	recognizer, err := openairecognizer.NewClient(openairecognizer.Config{
-		APIKey:  cfg.OpenAIAPIKey,
-		BaseURL: cfg.OpenAIBaseURL,
-		Model:   cfg.Model,
-		Timeout: cfg.OpenAITimeout,
+		APIKey:    cfg.OpenAIAPIKey,
+		BaseURL:   cfg.OpenAIBaseURL,
+		Model:     cfg.Model,
+		Timeout:   cfg.OpenAITimeout,
+		WebSearch: webSearch,
 	})
 	if err != nil {
+		promptVersion := openairecognizer.PromptVersionV1
+		if webSearch {
+			promptVersion = openairecognizer.PromptVersionV2
+		}
 		recognizerLog.Warn("openai beer label recognizer unavailable", zap.Error(err))
-		return beerlabelservice.NewUnavailableRecognizer(cfg.Model, "beer-label-v1", err)
+		return beerlabelservice.NewUnavailableRecognizer(cfg.Model, promptVersion, err)
 	}
 
 	return recognizer

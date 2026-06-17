@@ -13,7 +13,10 @@ Current production behavior:
   to JPEG quality 95, stores them in S3-compatible object storage, and records metadata in Postgres.
 - `POST /api/v1/detect` accepts a stored capture UUID and returns Ultralytics-style object detections.
 - `POST /api/v1/beer-labels/identify` accepts a stored capture or crop UUID, asks the configured OpenAI
-  vision model for structured beer label identification, and caches one result per UUID in Postgres.
+  vision model for structured beer label identification without web search, and caches the result in
+  Postgres by UUID and prompt version.
+- `POST /api/v2/beer-labels/identify` uses the same request body, allows OpenAI hosted web search for
+  verification, and may return web sources plus an Untappd direct-match or search recommendation.
 
 Required runtime dependencies:
 

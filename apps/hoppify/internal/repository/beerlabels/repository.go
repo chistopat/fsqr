@@ -30,9 +30,14 @@ func New(database *sql.DB, log *zap.Logger) (*Repository, error) {
 func (repo *Repository) FindBeerLabelRecognition(
 	ctx context.Context,
 	captureID uuid.UUID,
+	promptVersion string,
 ) (beerlabelmodel.Record, error) {
 	started := time.Now()
-	repo.log.Debug("pg find beer label recognition started", zap.String("capture_uuid", captureID.String()))
+	repo.log.Debug(
+		"pg find beer label recognition started",
+		zap.String("capture_uuid", captureID.String()),
+		zap.String("prompt_version", promptVersion),
+	)
 
 	var record beerlabelmodel.Record
 	var result []byte
@@ -44,8 +49,10 @@ func (repo *Repository) FindBeerLabelRecognition(
 			result,
 			created_at
 		FROM beer_label_recognitions
-		WHERE capture_uuid = $1`,
+		WHERE capture_uuid = $1
+			AND prompt_version = $2`,
 		captureID.String(),
+		promptVersion,
 	).Scan(
 		&record.CaptureUUID,
 		&record.Model,
@@ -54,8 +61,17 @@ func (repo *Repository) FindBeerLabelRecognition(
 		&record.CreatedAt,
 	)
 	if errors.Is(err, sql.ErrNoRows) {
-		repo.log.Debug("pg find beer label recognition not found", zap.String("capture_uuid", captureID.String()))
-		return beerlabelmodel.Record{}, fmt.Errorf("%w: %s", beerlabelmodel.ErrNotFound, captureID.String())
+		repo.log.Debug(
+			"pg find beer label recognition not found",
+			zap.String("capture_uuid", captureID.String()),
+			zap.String("prompt_version", promptVersion),
+		)
+		return beerlabelmodel.Record{}, fmt.Errorf(
+			"%w: %s %s",
+			beerlabelmodel.ErrNotFound,
+			captureID.String(),
+			promptVersion,
+		)
 	}
 	if err != nil {
 		repo.log.Error("pg find beer label recognition failed", zap.Error(err), zap.Duration("duration", time.Since(started)))
@@ -69,6 +85,7 @@ func (repo *Repository) FindBeerLabelRecognition(
 	repo.log.Debug(
 		"pg find beer label recognition completed",
 		zap.String("capture_uuid", captureID.String()),
+		zap.String("prompt_version", promptVersion),
 		zap.Duration("duration", time.Since(started)),
 	)
 
@@ -81,7 +98,11 @@ func (repo *Repository) InsertBeerLabelRecognition(ctx context.Context, record *
 	}
 
 	started := time.Now()
-	repo.log.Info("pg insert beer label recognition started", zap.String("capture_uuid", record.CaptureUUID.String()))
+	repo.log.Info(
+		"pg insert beer label recognition started",
+		zap.String("capture_uuid", record.CaptureUUID.String()),
+		zap.String("prompt_version", record.PromptVersion),
+	)
 
 	result, err := json.Marshal(record.Result)
 	if err != nil {
@@ -113,6 +134,7 @@ func (repo *Repository) InsertBeerLabelRecognition(ctx context.Context, record *
 	repo.log.Info(
 		"pg insert beer label recognition completed",
 		zap.String("capture_uuid", record.CaptureUUID.String()),
+		zap.String("prompt_version", record.PromptVersion),
 		zap.Duration("duration", time.Since(started)),
 	)
 

@@ -267,6 +267,106 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+  /api/v2/beer-labels/identify:
+    post:
+      summary: Identify a beer label with web verification
+      description: >
+        Runs a vision-capable LLM against a stored capture or crop image, allows
+        OpenAI hosted web search for verification, and stores the structured result
+        in Postgres under the v2 prompt version. Repeating the same UUID returns the
+        cached v2 result and does not call the model again. The result may include
+        searched sources and an Untappd direct-match or search recommendation.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BeerLabelIdentifyRequest"
+            examples:
+              crop:
+                summary: Identify by crop UUID
+                value:
+                  uuid: 3b7eaa56-f7a6-57e1-bff6-552b103bb263
+      responses:
+        "200":
+          description: Beer label recognition result was returned from v2 cache or model inference
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BeerLabelIdentifyResponse"
+              examples:
+                web:
+                  summary: Web verified result with Untappd recommendation
+                  value:
+                    uuid: 3b7eaa56-f7a6-57e1-bff6-552b103bb263
+                    model: gpt-5.4-mini
+                    promptVersion: beer-label-v2-web
+                    cached: false
+                    createdAt: "2026-06-17T12:00:00Z"
+                    result:
+                      status: identified
+                      container: can
+                      beerName: Punk IPA
+                      brewery: BrewDog
+                      style: IPA
+                      country: Scotland
+                      abv: 5.4
+                      confidence: 0.92
+                      evidence:
+                        - Visible label text reads Punk IPA
+                        - Web result confirms BrewDog Punk IPA
+                      notes: null
+                      webSearch:
+                        used: true
+                        queries:
+                          - BrewDog Punk IPA Untappd
+                        sources:
+                          - title: Punk IPA - BrewDog
+                            url: https://untappd.com/b/brewdog-punk-ipa/123
+                      untappd:
+                        status: direct_match
+                        url: https://untappd.com/b/brewdog-punk-ipa/123
+                        searchUrl: null
+                        name: Punk IPA
+                        brewery: BrewDog
+                        confidence: 0.88
+                        reason: Untappd result matches the visible beer and brewery.
+        "400":
+          description: Invalid JSON request or UUID
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Capture UUID was not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "415":
+          description: Unsupported image media type
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "502":
+          description: Object storage failed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "503":
+          description: Beer label model is unavailable
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          description: LLM inference or internal error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
 components:
   schemas:
     BeerLabelIdentifyRequest:
@@ -381,6 +481,99 @@ components:
           type: string
           nullable: true
           example: Some small text is not readable.
+        webSearch:
+          allOf:
+            - $ref: "#/components/schemas/BeerLabelWebSearchResult"
+          description: Present for v2 web-search recognitions.
+        untappd:
+          allOf:
+            - $ref: "#/components/schemas/BeerLabelUntappdRecommendation"
+          description: Present for v2 web-search recognitions.
+      additionalProperties: false
+    BeerLabelWebSearchResult:
+      type: object
+      required:
+        - used
+        - queries
+        - sources
+      properties:
+        used:
+          type: boolean
+          example: true
+        queries:
+          type: array
+          items:
+            type: string
+          example:
+            - BrewDog Punk IPA Untappd
+        sources:
+          type: array
+          items:
+            $ref: "#/components/schemas/BeerLabelWebSource"
+      additionalProperties: false
+    BeerLabelWebSource:
+      type: object
+      required:
+        - title
+        - url
+      properties:
+        title:
+          type: string
+          nullable: true
+          example: Punk IPA - BrewDog
+        url:
+          type: string
+          format: uri
+          example: https://untappd.com/b/brewdog-punk-ipa/123
+      additionalProperties: false
+    BeerLabelUntappdRecommendation:
+      type: object
+      required:
+        - status
+        - url
+        - searchUrl
+        - name
+        - brewery
+        - confidence
+        - reason
+      properties:
+        status:
+          type: string
+          enum:
+            - direct_match
+            - search_recommended
+            - ambiguous
+            - not_found
+            - not_applicable
+          example: direct_match
+        url:
+          type: string
+          format: uri
+          nullable: true
+          example: https://untappd.com/b/brewdog-punk-ipa/123
+        searchUrl:
+          type: string
+          format: uri
+          nullable: true
+          example: https://untappd.com/search?q=Punk%20IPA%20BrewDog
+        name:
+          type: string
+          nullable: true
+          example: Punk IPA
+        brewery:
+          type: string
+          nullable: true
+          example: BrewDog
+        confidence:
+          type: number
+          format: float
+          minimum: 0
+          maximum: 1
+          example: 0.88
+        reason:
+          type: string
+          nullable: true
+          example: Untappd result matches the visible beer and brewery.
       additionalProperties: false
     DetectRequest:
       type: object

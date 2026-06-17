@@ -18,7 +18,7 @@ func TestServiceReturnsCachedRecognitionWithoutCallingModel(t *testing.T) {
 	t.Parallel()
 
 	captureID := uuid.MustParse(testCaptureUUID)
-	recognitions := &fakeRecognitionRepository{record: newRecognitionRecord(captureID)}
+	recognitions := newFakeRecognitionRepository(newRecognitionRecord(captureID))
 	storage := &fakeStorage{}
 	recognizer := &fakeRecognizer{}
 	service := newTestService(t, &fakeCaptureRepository{}, recognitions, storage, recognizer)
@@ -39,6 +39,43 @@ func TestServiceReturnsCachedRecognitionWithoutCallingModel(t *testing.T) {
 	}
 }
 
+func TestServiceCachesRecognitionByPromptVersion(t *testing.T) {
+	t.Parallel()
+
+	captureID := uuid.MustParse(testCaptureUUID)
+	captures := &fakeCaptureRepository{record: newCaptureRecord(captureID)}
+	recognitions := newFakeRecognitionRepository(newRecognitionRecord(captureID))
+	storage := &fakeStorage{object: capturemodel.Object{Body: []byte("jpeg")}}
+	recognizer := &fakeRecognizer{
+		promptVersion: "beer-label-v2-web",
+		result: beerlabelmodel.Result{
+			Status:     beerlabelmodel.StatusIdentified,
+			Container:  beerlabelmodel.ContainerCan,
+			Confidence: 0.9,
+			Evidence:   []string{"web verified"},
+		},
+	}
+	service := newTestService(t, captures, recognitions, storage, recognizer)
+
+	response, err := service.Identify(context.Background(), testCaptureUUID)
+	if err != nil {
+		t.Fatalf("identify beer label: %v", err)
+	}
+
+	if response.Cached {
+		t.Fatalf("expected v2 response to bypass v1 cache")
+	}
+	if response.PromptVersion != "beer-label-v2-web" {
+		t.Fatalf("expected v2 prompt version, got %q", response.PromptVersion)
+	}
+	if recognizer.calls != 1 {
+		t.Fatalf("expected recognizer to be called, got %d calls", recognizer.calls)
+	}
+	if recognitions.inserted != 1 {
+		t.Fatalf("expected one inserted recognition, got %d", recognitions.inserted)
+	}
+}
+
 func TestServiceStoresRecognitionAndReusesIt(t *testing.T) {
 	t.Parallel()
 
@@ -53,7 +90,7 @@ func TestServiceStoresRecognitionAndReusesIt(t *testing.T) {
 		ChecksumSHA256: "checksum",
 		Metadata:       map[string]any{},
 	}}
-	recognitions := &fakeRecognitionRepository{}
+	recognitions := newFakeRecognitionRepository()
 	storage := &fakeStorage{object: capturemodel.Object{Body: []byte("jpeg")}}
 	recognizer := &fakeRecognizer{result: beerlabelmodel.Result{
 		Status:     beerlabelmodel.StatusIdentified,
@@ -96,7 +133,7 @@ func TestServiceMapsUnavailableRecognizer(t *testing.T) {
 	service := newTestService(
 		t,
 		&fakeCaptureRepository{record: newCaptureRecord(captureID)},
-		&fakeRecognitionRepository{},
+		newFakeRecognitionRepository(),
 		&fakeStorage{object: capturemodel.Object{Body: []byte("jpeg")}},
 		&fakeRecognizer{err: ErrModelUnavailable},
 	)
@@ -180,20 +217,30 @@ func (repo *fakeCaptureRepository) FindCaptureByUUID(_ context.Context, id uuid.
 }
 
 type fakeRecognitionRepository struct {
-	record   beerlabelmodel.Record
+	records  map[string]beerlabelmodel.Record
 	inserted int
 	err      error
+}
+
+func newFakeRecognitionRepository(records ...beerlabelmodel.Record) *fakeRecognitionRepository {
+	repo := &fakeRecognitionRepository{records: map[string]beerlabelmodel.Record{}}
+	for _, record := range records {
+		repo.records[recognitionKey(record.CaptureUUID, record.PromptVersion)] = record
+	}
+
+	return repo
 }
 
 func (repo *fakeRecognitionRepository) FindBeerLabelRecognition(
 	_ context.Context,
 	captureID uuid.UUID,
+	promptVersion string,
 ) (beerlabelmodel.Record, error) {
 	if repo.err != nil {
 		return beerlabelmodel.Record{}, repo.err
 	}
-	if repo.record.CaptureUUID == captureID {
-		return repo.record, nil
+	if record, ok := repo.records[recognitionKey(captureID, promptVersion)]; ok {
+		return record, nil
 	}
 
 	return beerlabelmodel.Record{}, beerlabelmodel.ErrNotFound
@@ -208,9 +255,13 @@ func (repo *fakeRecognitionRepository) InsertBeerLabelRecognition(
 	}
 	repo.inserted++
 	record.CreatedAt = time.Unix(2, 0).UTC()
-	repo.record = *record
+	repo.records[recognitionKey(record.CaptureUUID, record.PromptVersion)] = *record
 
 	return nil
+}
+
+func recognitionKey(captureID uuid.UUID, promptVersion string) string {
+	return captureID.String() + ":" + promptVersion
 }
 
 type fakeStorage struct {
@@ -234,9 +285,10 @@ func (storage *fakeStorage) GetObject(
 }
 
 type fakeRecognizer struct {
-	result beerlabelmodel.Result
-	calls  int
-	err    error
+	result        beerlabelmodel.Result
+	promptVersion string
+	calls         int
+	err           error
 }
 
 func (recognizer *fakeRecognizer) IdentifyBeerLabel(_ context.Context, _ []byte) (beerlabelmodel.Result, error) {
@@ -253,5 +305,9 @@ func (recognizer *fakeRecognizer) Model() string {
 }
 
 func (recognizer *fakeRecognizer) PromptVersion() string {
+	if recognizer.promptVersion != "" {
+		return recognizer.promptVersion
+	}
+
 	return "beer-label-v1"
 }

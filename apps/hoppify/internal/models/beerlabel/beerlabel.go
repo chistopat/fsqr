@@ -18,6 +18,12 @@ const (
 	ContainerGlass   = "glass"
 	ContainerOther   = "other"
 	ContainerUnknown = "unknown"
+
+	UntappdDirectMatch       = "direct_match"
+	UntappdSearchRecommended = "search_recommended"
+	UntappdAmbiguous         = "ambiguous"
+	UntappdNotFound          = "not_found"
+	UntappdNotApplicable     = "not_applicable"
 )
 
 var ErrNotFound = errors.New("beer label recognition not found")
@@ -27,16 +33,39 @@ type Request struct {
 }
 
 type Result struct {
-	Status     string   `json:"status"`
-	Container  string   `json:"container"`
-	BeerName   *string  `json:"beerName"`
-	Brewery    *string  `json:"brewery"`
-	Style      *string  `json:"style"`
-	Country    *string  `json:"country"`
-	ABV        *float64 `json:"abv"`
-	Confidence float64  `json:"confidence"`
-	Evidence   []string `json:"evidence"`
-	Notes      *string  `json:"notes"`
+	Status     string                 `json:"status"`
+	Container  string                 `json:"container"`
+	BeerName   *string                `json:"beerName"`
+	Brewery    *string                `json:"brewery"`
+	Style      *string                `json:"style"`
+	Country    *string                `json:"country"`
+	ABV        *float64               `json:"abv"`
+	Confidence float64                `json:"confidence"`
+	Evidence   []string               `json:"evidence"`
+	Notes      *string                `json:"notes"`
+	WebSearch  *WebSearchResult       `json:"webSearch,omitempty"`
+	Untappd    *UntappdRecommendation `json:"untappd,omitempty"`
+}
+
+type WebSearchResult struct {
+	Used    bool        `json:"used"`
+	Queries []string    `json:"queries"`
+	Sources []WebSource `json:"sources"`
+}
+
+type WebSource struct {
+	Title *string `json:"title"`
+	URL   string  `json:"url"`
+}
+
+type UntappdRecommendation struct {
+	Status     string  `json:"status"`
+	URL        *string `json:"url"`
+	SearchURL  *string `json:"searchUrl"`
+	Name       *string `json:"name"`
+	Brewery    *string `json:"brewery"`
+	Confidence float64 `json:"confidence"`
+	Reason     *string `json:"reason"`
 }
 
 type Record struct {
