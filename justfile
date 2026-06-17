@@ -224,6 +224,7 @@ cloud:
     cd deployment
     tofu init -input=false
     tofu apply
+    ../scripts/deploy/hoppify-s3.sh
 
 bootstrap:
     ./scripts/deploy/bootstrap.sh

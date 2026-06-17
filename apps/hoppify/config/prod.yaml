@@ -19,9 +19,9 @@ database:
   connect_timeout: 5s
 
 s3:
-  bucket: "hoppify"
-  region: "us-east-1"
-  endpoint_url: ""
+  bucket: "hoppify-kailas-cloud"
+  region: "hel1"
+  endpoint_url: "https://hel1.your-objectstorage.com"
   access_key_id: ""
   secret_access_key: ""
   session_token: ""

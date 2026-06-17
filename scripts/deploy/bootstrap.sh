@@ -68,6 +68,36 @@ require_env() {
     fi
 }
 
+require_hoppify_s3_env() {
+    local missing=()
+    local name
+
+    for name in \
+        HOPPIFY_S3_BUCKET \
+        HOPPIFY_S3_REGION \
+        HOPPIFY_S3_ENDPOINT_URL \
+        HOPPIFY_S3_ACCESS_KEY_ID \
+        HOPPIFY_S3_SECRET_ACCESS_KEY
+    do
+        if [[ -z "${!name:-}" ]]; then
+            missing+=("$name")
+        fi
+    done
+
+    if (( ${#missing[@]} == 0 )); then
+        return
+    fi
+
+    cat >&2 <<EOF
+Hoppify S3 configuration is incomplete in $env_file:
+${missing[*]}
+
+Run just cloud after exporting Hetzner Object Storage S3 credentials. The cloud
+recipe writes HOPPIFY_S3_* values to root .env and ensures the bucket exists.
+EOF
+    exit 1
+}
+
 generate_config_file() {
     local path="$1"
     local postgres_db="${POSTGRES_DB:-fsqr}"
@@ -236,9 +266,9 @@ generate_compose_env_file() {
     write_env_var "$path" HOPPIFY_POSTGRES_DB "${HOPPIFY_POSTGRES_DB:-hoppify}"
     write_env_var "$path" HOPPIFY_POSTGRES_USER "${HOPPIFY_POSTGRES_USER:-hoppify}"
     write_env_var "$path" HOPPIFY_POSTGRES_PASSWORD "${HOPPIFY_POSTGRES_PASSWORD:-$POSTGRES_PASSWORD}"
-    write_env_var "$path" HOPPIFY_S3_BUCKET "${HOPPIFY_S3_BUCKET:-hoppify}"
-    write_env_var "$path" HOPPIFY_S3_REGION "${HOPPIFY_S3_REGION:-us-east-1}"
-    write_env_var "$path" HOPPIFY_S3_ENDPOINT_URL "${HOPPIFY_S3_ENDPOINT_URL:-}"
+    write_env_var "$path" HOPPIFY_S3_BUCKET "${HOPPIFY_S3_BUCKET:-hoppify-kailas-cloud}"
+    write_env_var "$path" HOPPIFY_S3_REGION "${HOPPIFY_S3_REGION:-hel1}"
+    write_env_var "$path" HOPPIFY_S3_ENDPOINT_URL "${HOPPIFY_S3_ENDPOINT_URL:-https://hel1.your-objectstorage.com}"
     write_env_var "$path" HOPPIFY_S3_ACCESS_KEY_ID "${HOPPIFY_S3_ACCESS_KEY_ID:-}"
     write_env_var "$path" HOPPIFY_S3_SECRET_ACCESS_KEY "${HOPPIFY_S3_SECRET_ACCESS_KEY:-}"
     write_env_var "$path" HOPPIFY_S3_SESSION_TOKEN "${HOPPIFY_S3_SESSION_TOKEN:-}"
@@ -269,6 +299,7 @@ load_root_env
 require_env POSTGRES_PASSWORD
 require_env FSQR_DOMAIN
 require_env GRAFANA_ADMIN_PASSWORD
+require_hoppify_s3_env
 
 host="$(resolve_host)"
 target="$ssh_user@$host"
