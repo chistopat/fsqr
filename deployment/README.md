@@ -117,13 +117,17 @@ The bootstrap command:
 - Reads root `.env` as the only local secret source.
 - Generates a minimal `/opt/fsqr/.env` for Docker Compose secrets/interpolation.
 - Generates `/opt/fsqr/apps/fsqr/config.yaml` for fsqr application settings.
-- Copies `deployment/compose.prod.yml`, `gateway/Caddyfile.prod`, observability provisioning, dashboards, and fsqr SQL migrations into the same relative layout used in the repository.
+- Copies `deployment/compose.prod.yml`, `gateway/Caddyfile.prod`, observability provisioning, dashboards, and SQL migrations into the same relative layout used in the repository.
 - Optionally logs in to GHCR when `GHCR_USERNAME` and `GHCR_TOKEN` are present in root `.env`.
 - Runs `docker compose pull` and starts fsqr, Hoppify, and shared infrastructure. It does not apply migrations.
 
 The `fsqr` container receives application settings only through
 `FSQR_CONFIG_FILE=/app/config/config.yaml`; production database and embedding
 settings are not passed to the application as individual env vars.
+
+The `hoppify` container reads the `prod.yaml` bundled in its image and receives
+production database and S3 settings through `HOPPIFY_*` environment variables
+from `/opt/fsqr/.env`.
 
 Run migrations independently after bootstrap:
 

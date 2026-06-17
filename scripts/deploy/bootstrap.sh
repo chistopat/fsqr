@@ -284,12 +284,10 @@ cp "$caddyfile" "$tmpdir/gateway/Caddyfile.prod"
 cp -R "$observability_dir" "$tmpdir/observability"
 generate_compose_env_file "$tmpdir/.env"
 generate_config_file "$tmpdir/apps/fsqr/config.yaml"
-generate_hoppify_config_file "$tmpdir/apps/hoppify/config.yaml"
 cp "$repo_root"/apps/fsqr/migrations/*.sql "$tmpdir/apps/fsqr/migrations/"
 cp "$repo_root"/apps/hoppify/migrations/*.sql "$tmpdir/apps/hoppify/migrations/"
 chmod 600 "$tmpdir/.env"
 chmod 644 "$tmpdir/apps/fsqr/config.yaml"
-chmod 644 "$tmpdir/apps/hoppify/config.yaml"
 
 log "waiting for ssh: $target"
 wait_for_ssh "$target"
@@ -325,7 +323,6 @@ done
 cd "$APP_DIR"
 chmod 600 .env
 chmod 644 apps/fsqr/config.yaml
-chmod 644 apps/hoppify/config.yaml
 
 set -a
 # The generated .env quotes values, so source it instead of parsing raw lines.

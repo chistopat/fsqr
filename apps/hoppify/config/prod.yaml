@@ -11,7 +11,7 @@ logger:
   development: false
 
 database:
-  dsn: "postgres://hoppify:hoppify@127.0.0.1:5432/hoppify?sslmode=disable"
+  dsn: "host=postgres port=5432 dbname=hoppify user=hoppify password=hoppify sslmode=disable"
   max_open_conns: 8
   max_idle_conns: 4
   conn_max_lifetime: 30m
