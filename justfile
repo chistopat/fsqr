@@ -92,8 +92,8 @@ postgres-psql:
     {{compose}} exec postgres psql -U "${POSTGRES_USER:-fsqr}" -d "${POSTGRES_DB:-fsqr}"
 
 postgres-migrate:
-    {{compose}} run --build --rm migrate-fsqr
-    {{compose}} run --build --rm migrate-hoppify
+    {{compose}} run -T --build --rm migrate-fsqr
+    {{compose}} run -T --build --rm migrate-hoppify
 
 test-db-create:
     #!/usr/bin/env bash
@@ -122,8 +122,8 @@ test-postgres-wait:
     exit 1
 
 test-migrate: test-db-create
-    {{e2e_compose}} run --build --rm migrate-fsqr
-    {{e2e_compose}} run --build --rm migrate-hoppify
+    {{e2e_compose}} run -T --build --rm migrate-fsqr
+    {{e2e_compose}} run -T --build --rm migrate-hoppify
 
 test-postgres-psql:
     {{e2e_compose}} exec postgres psql -U "${POSTGRES_USER:-fsqr}" -d "${TEST_POSTGRES_DB:-fsqr_test}"
@@ -270,6 +270,6 @@ migrate:
     ssh "${ssh_opts[@]}" "$target" APP_DIR="$app_dir" 'bash -s' <<'EOF'
     set -euo pipefail
     cd "$APP_DIR"
-    docker compose --env-file .env -f deployment/compose.prod.yml run --rm migrate-fsqr
-    docker compose --env-file .env -f deployment/compose.prod.yml run --rm migrate-hoppify
+    docker compose --env-file .env -f deployment/compose.prod.yml run -T --rm migrate-fsqr < /dev/null
+    docker compose --env-file .env -f deployment/compose.prod.yml run -T --rm migrate-hoppify < /dev/null
     EOF
