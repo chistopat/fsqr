@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http"
 
+	beerlabelservice "github.com/chistopat/hoppify/internal/service/beerlabels"
 	captureservice "github.com/chistopat/hoppify/internal/service/captures"
 	cropservice "github.com/chistopat/hoppify/internal/service/crops"
 	detectservice "github.com/chistopat/hoppify/internal/service/detect"
@@ -92,6 +93,31 @@ func writeCropError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusNotFound, string(cropErr.Code), cropErr.Message)
 	default:
 		writeError(w, http.StatusInternalServerError, string(cropservice.InternalError), "internal server error")
+	}
+}
+
+func writeBeerLabelError(w http.ResponseWriter, err error) {
+	var beerLabelErr *beerlabelservice.Error
+	if !errors.As(err, &beerLabelErr) {
+		writeError(w, http.StatusInternalServerError, string(beerlabelservice.InternalError), "internal server error")
+		return
+	}
+
+	switch beerLabelErr.Code {
+	case beerlabelservice.InvalidRequest:
+		writeError(w, http.StatusBadRequest, string(beerLabelErr.Code), beerLabelErr.Message)
+	case beerlabelservice.UnsupportedMediaType:
+		writeError(w, http.StatusUnsupportedMediaType, string(beerLabelErr.Code), beerLabelErr.Message)
+	case beerlabelservice.StorageError:
+		writeError(w, http.StatusBadGateway, string(beerLabelErr.Code), beerLabelErr.Message)
+	case beerlabelservice.NotFound:
+		writeError(w, http.StatusNotFound, string(beerLabelErr.Code), beerLabelErr.Message)
+	case beerlabelservice.ModelUnavailable:
+		writeError(w, http.StatusServiceUnavailable, string(beerLabelErr.Code), beerLabelErr.Message)
+	case beerlabelservice.InferenceError:
+		writeError(w, http.StatusInternalServerError, string(beerLabelErr.Code), beerLabelErr.Message)
+	default:
+		writeError(w, http.StatusInternalServerError, string(beerlabelservice.InternalError), "internal server error")
 	}
 }
 
