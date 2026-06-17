@@ -143,6 +143,68 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+  /api/v1/crops:
+    post:
+      summary: Create image crops from known bounding boxes
+      description: >
+        Cuts JPEG crop captures from an existing capture image using bounding boxes
+        already produced by detection. This endpoint does not run inference.
+        Repeating the same parent UUID and bounding boxes returns the same crop captures.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CropRequest"
+            examples:
+              boxes:
+                summary: Crop by capture UUID and boxes
+                value:
+                  uuid: 018f7b8e-4d96-7b42-9f64-09e5d3a8e7c1
+                  boxes:
+                    - bbox:
+                        - 335.08
+                        - 700.39
+                        - 414.09
+                        - 920.65
+                      confidence: 0.76799
+      responses:
+        "201":
+          description: Crop captures were stored or already existed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CropResponse"
+        "400":
+          description: Invalid request, bbox, or undecodable image
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Capture UUID was not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "415":
+          description: Unsupported image media type
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "502":
+          description: Object storage failed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          description: Internal error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
 components:
   schemas:
     DetectRequest:
@@ -156,6 +218,83 @@ components:
           description: Capture UUID returned by `POST /api/v1/captures`.
           example: 018f7b8e-4d96-7b42-9f64-09e5d3a8e7c1
       additionalProperties: false
+    CropRequest:
+      type: object
+      required:
+        - uuid
+        - boxes
+      properties:
+        uuid:
+          type: string
+          format: uuid
+          description: Parent capture UUID returned by `POST /api/v1/captures` or `/api/v1/crops`.
+          example: 018f7b8e-4d96-7b42-9f64-09e5d3a8e7c1
+        boxes:
+          type: array
+          minItems: 1
+          maxItems: 300
+          items:
+            $ref: "#/components/schemas/CropBox"
+      additionalProperties: false
+    CropBox:
+      type: object
+      required:
+        - bbox
+      properties:
+        bbox:
+          type: array
+          description: Absolute `[x1, y1, x2, y2]` crop rectangle in parent image pixels.
+          minItems: 4
+          maxItems: 4
+          items:
+            type: number
+            format: float
+          example:
+            - 335.08
+            - 700.39
+            - 414.09
+            - 920.65
+        confidence:
+          type: number
+          format: float
+          minimum: 0
+          maximum: 1
+          description: Optional detector confidence carried by the caller. It is not persisted.
+          example: 0.76799
+      additionalProperties: false
+    CropResponse:
+      type: object
+      required:
+        - uuid
+        - crops
+      properties:
+        uuid:
+          type: string
+          format: uuid
+          description: Parent capture UUID used as the crop source.
+          example: 018f7b8e-4d96-7b42-9f64-09e5d3a8e7c1
+        crops:
+          type: array
+          items:
+            $ref: "#/components/schemas/CropCapture"
+      additionalProperties: false
+    CropCapture:
+      type: object
+      required:
+        - uuid
+        - type
+        - uri
+      properties:
+        uuid:
+          type: string
+          format: uuid
+          example: 3b7eaa56-f7a6-57e1-bff6-552b103bb263
+        type:
+          type: string
+          example: image_crop
+        uri:
+          type: string
+          example: s3://hoppify/captures/crops/018f7b8e-4d96-7b42-9f64-09e5d3a8e7c1/3b7eaa56-f7a6-57e1-bff6-552b103bb263.jpg
     DetectResponse:
       type: object
       required:

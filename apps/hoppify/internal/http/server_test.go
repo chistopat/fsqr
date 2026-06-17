@@ -13,8 +13,10 @@ import (
 	"testing"
 
 	capturemodel "github.com/chistopat/hoppify/internal/models/capture"
+	cropmodel "github.com/chistopat/hoppify/internal/models/crop"
 	detectionmodel "github.com/chistopat/hoppify/internal/models/detection"
 	captureservice "github.com/chistopat/hoppify/internal/service/captures"
+	cropservice "github.com/chistopat/hoppify/internal/service/crops"
 	detectservice "github.com/chistopat/hoppify/internal/service/detect"
 )
 
@@ -287,6 +289,63 @@ func TestDetectObjectsMapsServiceErrors(t *testing.T) {
 	}
 }
 
+func TestCreateCropsAcceptsUUIDAndBoxes(t *testing.T) {
+	t.Parallel()
+
+	expected := cropmodel.Response{
+		UUID: "018f7b8e-4d96-7b42-9f64-09e5d3a8e7c1",
+		Crops: []cropmodel.CropResponse{{
+			UUID: "0190b67a-dc55-769d-9d2e-92d6d29af3c7",
+			Type: "image_crop",
+			URI:  "s3://hoppify/captures/crops/018f7b8e-4d96-7b42-9f64-09e5d3a8e7c1/0190b67a-dc55-769d-9d2e-92d6d29af3c7.jpg",
+		}},
+	}
+	service := &fakeCropService{response: expected}
+	handler := NewHandler(WithCropService(service))
+	request := httptest.NewRequest(
+		http.MethodPost,
+		"/api/v1/crops",
+		strings.NewReader(`{"uuid":"018f7b8e-4d96-7b42-9f64-09e5d3a8e7c1","boxes":[{"bbox":[1,2,3,4],"confidence":0.9}]}`),
+	)
+	response := httptest.NewRecorder()
+
+	handler.ServeHTTP(response, request)
+
+	if response.Code != http.StatusCreated {
+		t.Fatalf("expected status %d, got %d with body %q", http.StatusCreated, response.Code, response.Body.String())
+	}
+	if service.request.UUID != "018f7b8e-4d96-7b42-9f64-09e5d3a8e7c1" {
+		t.Fatalf("expected service uuid, got %q", service.request.UUID)
+	}
+	if len(service.request.Boxes) != 1 || len(service.request.Boxes[0].BBox) != 4 {
+		t.Fatalf("expected service boxes, got %#v", service.request.Boxes)
+	}
+
+	var actual cropmodel.Response
+	if err := json.Unmarshal(response.Body.Bytes(), &actual); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if actual.Crops[0] != expected.Crops[0] {
+		t.Fatalf("expected crop response, got %#v", actual.Crops)
+	}
+}
+
+func TestCreateCropsRejectsUnknownRequestFields(t *testing.T) {
+	t.Parallel()
+
+	handler := NewHandler(WithCropService(&fakeCropService{}))
+	request := httptest.NewRequest(
+		http.MethodPost,
+		"/api/v1/crops",
+		strings.NewReader(`{"uuid":"018f7b8e-4d96-7b42-9f64-09e5d3a8e7c1","boxes":[],"extra":true}`),
+	)
+	response := httptest.NewRecorder()
+
+	handler.ServeHTTP(response, request)
+
+	assertAPIError(t, response, http.StatusBadRequest, string(cropservice.InvalidRequest))
+}
+
 func TestMetricsHandlerServesPrometheusMetrics(t *testing.T) {
 	t.Parallel()
 
@@ -326,6 +385,12 @@ type fakeDetectService struct {
 	err      error
 }
 
+type fakeCropService struct {
+	response cropmodel.Response
+	request  cropmodel.Request
+	err      error
+}
+
 func (provider *fakeCaptureStatsProvider) CaptureStats(_ context.Context) (capturemodel.Stats, error) {
 	return provider.stats, nil
 }
@@ -337,6 +402,18 @@ func (service *fakeDetectService) Detect(
 	service.uuid = rawUUID
 	if service.err != nil {
 		return detectionmodel.Response{}, service.err
+	}
+
+	return service.response, nil
+}
+
+func (service *fakeCropService) CreateCrops(
+	_ context.Context,
+	request cropmodel.Request,
+) (cropmodel.Response, error) {
+	service.request = request
+	if service.err != nil {
+		return cropmodel.Response{}, service.err
 	}
 
 	return service.response, nil

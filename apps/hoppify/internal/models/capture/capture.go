@@ -9,6 +9,7 @@ import (
 
 const (
 	TypeImage       = "image"
+	TypeImageCrop   = "image_crop"
 	ContentTypeJPEG = "image/jpeg"
 )
 
@@ -29,6 +30,7 @@ type UploadFile struct {
 
 type Record struct {
 	UUID           uuid.UUID
+	ParentUUID     uuid.NullUUID
 	Type           string
 	Bucket         string
 	ObjectKey      string
