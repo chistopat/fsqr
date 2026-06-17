@@ -205,8 +205,183 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+  /api/v1/beer-labels/identify:
+    post:
+      summary: Identify a beer label from a stored image
+      description: >
+        Runs a vision-capable LLM against a stored capture or crop image and stores
+        the structured result in Postgres. Repeating the same UUID returns the cached
+        result and does not call the model again. The model is not given web search
+        or other external tools.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BeerLabelIdentifyRequest"
+            examples:
+              crop:
+                summary: Identify by crop UUID
+                value:
+                  uuid: 3b7eaa56-f7a6-57e1-bff6-552b103bb263
+      responses:
+        "200":
+          description: Beer label recognition result was returned from cache or model inference
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BeerLabelIdentifyResponse"
+        "400":
+          description: Invalid JSON request or UUID
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Capture UUID was not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "415":
+          description: Unsupported image media type
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "502":
+          description: Object storage failed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "503":
+          description: Beer label model is unavailable
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          description: LLM inference or internal error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
 components:
   schemas:
+    BeerLabelIdentifyRequest:
+      type: object
+      required:
+        - uuid
+      properties:
+        uuid:
+          type: string
+          format: uuid
+          description: Capture or crop UUID returned by `POST /api/v1/captures` or `/api/v1/crops`.
+          example: 3b7eaa56-f7a6-57e1-bff6-552b103bb263
+      additionalProperties: false
+    BeerLabelIdentifyResponse:
+      type: object
+      required:
+        - uuid
+        - model
+        - promptVersion
+        - cached
+        - result
+        - createdAt
+      properties:
+        uuid:
+          type: string
+          format: uuid
+          example: 3b7eaa56-f7a6-57e1-bff6-552b103bb263
+        model:
+          type: string
+          example: chatgpt-5.4-mini
+        promptVersion:
+          type: string
+          example: beer-label-v1
+        cached:
+          type: boolean
+          description: True when the result was read from Postgres without calling the model.
+          example: false
+        result:
+          $ref: "#/components/schemas/BeerLabelResult"
+        createdAt:
+          type: string
+          format: date-time
+      additionalProperties: false
+    BeerLabelResult:
+      type: object
+      required:
+        - status
+        - container
+        - beerName
+        - brewery
+        - style
+        - country
+        - abv
+        - confidence
+        - evidence
+        - notes
+      properties:
+        status:
+          type: string
+          enum:
+            - identified
+            - uncertain
+            - unreadable
+            - not_beer
+          example: identified
+        container:
+          type: string
+          enum:
+            - bottle
+            - can
+            - glass
+            - other
+            - unknown
+          example: bottle
+        beerName:
+          type: string
+          nullable: true
+          example: Punk IPA
+        brewery:
+          type: string
+          nullable: true
+          example: BrewDog
+        style:
+          type: string
+          nullable: true
+          example: IPA
+        country:
+          type: string
+          nullable: true
+          example: Scotland
+        abv:
+          type: number
+          format: float
+          nullable: true
+          minimum: 0
+          maximum: 100
+          example: 5.4
+        confidence:
+          type: number
+          format: float
+          minimum: 0
+          maximum: 1
+          example: 0.82
+        evidence:
+          type: array
+          items:
+            type: string
+          example:
+            - Label text appears to include Punk IPA
+            - Brewery wordmark appears to read BrewDog
+        notes:
+          type: string
+          nullable: true
+          example: Some small text is not readable.
+      additionalProperties: false
     DetectRequest:
       type: object
       required:

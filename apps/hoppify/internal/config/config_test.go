@@ -50,6 +50,15 @@ func TestLoadLocalConfig(t *testing.T) {
 	if cfg.Detector.MaxDetections != 300 {
 		t.Fatalf("expected detector max detections 300, got %d", cfg.Detector.MaxDetections)
 	}
+	if cfg.BeerLabel.Model != "chatgpt-5.4-mini" {
+		t.Fatalf("expected beer label model chatgpt-5.4-mini, got %q", cfg.BeerLabel.Model)
+	}
+	if cfg.BeerLabel.OpenAIBaseURL != "https://api.openai.com/v1" {
+		t.Fatalf("expected beer label openai base url, got %q", cfg.BeerLabel.OpenAIBaseURL)
+	}
+	if cfg.BeerLabel.OpenAITimeout != 30*time.Second {
+		t.Fatalf("expected beer label openai timeout 30s, got %s", cfg.BeerLabel.OpenAITimeout)
+	}
 	if cfg.Observability.Metrics.Path != "/metrics" {
 		t.Fatalf("expected metrics path /metrics, got %q", cfg.Observability.Metrics.Path)
 	}

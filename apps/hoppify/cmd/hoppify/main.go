@@ -16,7 +16,10 @@ import (
 	onnxdetector "github.com/chistopat/hoppify/internal/detector/onnx"
 	httpapi "github.com/chistopat/hoppify/internal/http"
 	"github.com/chistopat/hoppify/internal/logger"
+	openairecognizer "github.com/chistopat/hoppify/internal/recognizer/openai"
+	beerlabelrepo "github.com/chistopat/hoppify/internal/repository/beerlabels"
 	capturerepo "github.com/chistopat/hoppify/internal/repository/captures"
+	beerlabelservice "github.com/chistopat/hoppify/internal/service/beerlabels"
 	captureservice "github.com/chistopat/hoppify/internal/service/captures"
 	cropservice "github.com/chistopat/hoppify/internal/service/crops"
 	detectservice "github.com/chistopat/hoppify/internal/service/detect"
@@ -57,6 +60,10 @@ func run() error {
 	repository, err := capturerepo.New(database, appLogger.Named("captures.repository"))
 	if err != nil {
 		return fmt.Errorf("init captures repository: %w", err)
+	}
+	beerLabelRepository, err := beerlabelrepo.New(database, appLogger.Named("beer_labels.repository"))
+	if err != nil {
+		return fmt.Errorf("init beer labels repository: %w", err)
 	}
 
 	objectStorage, err := storage.NewS3Storage(ctx, storage.S3Config{
@@ -99,6 +106,18 @@ func run() error {
 		return fmt.Errorf("init crops service: %w", err)
 	}
 
+	beerLabelRecognizer := newBeerLabelRecognizer(cfg.BeerLabel, appLogger.Named("beer_labels.openai"))
+	beerLabelService, err := beerlabelservice.NewService(
+		repository,
+		beerLabelRepository,
+		objectStorage,
+		beerLabelRecognizer,
+		beerlabelservice.Config{MaxObjectBytes: cfg.Upload.Limits().MaxFileBytes},
+	)
+	if err != nil {
+		return fmt.Errorf("init beer labels service: %w", err)
+	}
+
 	metrics := httpapi.NewMetrics(repository, appLogger.Named("metrics"))
 	server := &http.Server{
 		Addr: cfg.HTTP.Addr,
@@ -106,6 +125,7 @@ func run() error {
 			httpapi.WithCaptureService(captureService),
 			httpapi.WithDetectService(detectService),
 			httpapi.WithCropService(cropService),
+			httpapi.WithBeerLabelService(beerLabelService),
 			httpapi.WithCaptureLimits(cfg.Upload.Limits()),
 			httpapi.WithLogger(appLogger.Named("http")),
 			httpapi.WithHTTPMetrics(metrics.HTTP),
@@ -119,6 +139,24 @@ func run() error {
 	}
 
 	return serveUntilStopped(appLogger, server, metricsServer, &cfg)
+}
+
+func newBeerLabelRecognizer(
+	cfg config.BeerLabelConfig,
+	recognizerLog *zap.Logger,
+) beerlabelservice.Recognizer {
+	recognizer, err := openairecognizer.NewClient(openairecognizer.Config{
+		APIKey:  cfg.OpenAIAPIKey,
+		BaseURL: cfg.OpenAIBaseURL,
+		Model:   cfg.Model,
+		Timeout: cfg.OpenAITimeout,
+	})
+	if err != nil {
+		recognizerLog.Warn("openai beer label recognizer unavailable", zap.Error(err))
+		return beerlabelservice.NewUnavailableRecognizer(cfg.Model, "beer-label-v1", err)
+	}
+
+	return recognizer
 }
 
 func newDetectorBackend(

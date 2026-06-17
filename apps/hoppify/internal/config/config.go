@@ -28,6 +28,9 @@ const (
 	defaultDetectorConfidence     = 0.25
 	defaultDetectorIOU            = 0.7
 	defaultDetectorMaxDetections  = 300
+	defaultBeerLabelModel         = "chatgpt-5.4-mini"
+	defaultBeerLabelOpenAIBaseURL = "https://api.openai.com/v1"
+	defaultBeerLabelOpenAITimeout = 30 * time.Second
 )
 
 type Config struct {
@@ -38,6 +41,7 @@ type Config struct {
 	S3            S3Config            `mapstructure:"s3"`
 	Upload        UploadConfig        `mapstructure:"upload"`
 	Detector      DetectorConfig      `mapstructure:"detector"`
+	BeerLabel     BeerLabelConfig     `mapstructure:"beer_label"`
 	Observability ObservabilityConfig `mapstructure:"observability"`
 }
 
@@ -89,6 +93,13 @@ type DetectorConfig struct {
 	ConfidenceThreshold float64 `mapstructure:"confidence_threshold"`
 	IOUThreshold        float64 `mapstructure:"iou_threshold"`
 	MaxDetections       int     `mapstructure:"max_detections"`
+}
+
+type BeerLabelConfig struct {
+	Model         string        `mapstructure:"model"`
+	OpenAIAPIKey  string        `mapstructure:"openai_api_key"`
+	OpenAIBaseURL string        `mapstructure:"openai_base_url"`
+	OpenAITimeout time.Duration `mapstructure:"openai_timeout"`
 }
 
 type ObservabilityConfig struct {
@@ -178,6 +189,10 @@ func setDefaults(loader *viper.Viper, env string) {
 	loader.SetDefault("detector.confidence_threshold", defaultDetectorConfidence)
 	loader.SetDefault("detector.iou_threshold", defaultDetectorIOU)
 	loader.SetDefault("detector.max_detections", defaultDetectorMaxDetections)
+	loader.SetDefault("beer_label.model", defaultBeerLabelModel)
+	loader.SetDefault("beer_label.openai_api_key", "")
+	loader.SetDefault("beer_label.openai_base_url", defaultBeerLabelOpenAIBaseURL)
+	loader.SetDefault("beer_label.openai_timeout", defaultBeerLabelOpenAITimeout)
 	loader.SetDefault("observability.service_name", "hoppify")
 	loader.SetDefault("observability.metrics.path", "/metrics")
 	loader.SetDefault("observability.metrics.addr", "127.0.0.1:3001")
@@ -212,6 +227,10 @@ func bindEnv(loader *viper.Viper) {
 	_ = loader.BindEnv("detector.confidence_threshold", "HOPPIFY_DETECTOR_CONFIDENCE_THRESHOLD")
 	_ = loader.BindEnv("detector.iou_threshold", "HOPPIFY_DETECTOR_IOU_THRESHOLD")
 	_ = loader.BindEnv("detector.max_detections", "HOPPIFY_DETECTOR_MAX_DETECTIONS")
+	_ = loader.BindEnv("beer_label.model", "HOPPIFY_BEER_LABEL_MODEL")
+	_ = loader.BindEnv("beer_label.openai_api_key", "HOPPIFY_BEER_LABEL_OPENAI_API_KEY", "OPENAI_API_KEY")
+	_ = loader.BindEnv("beer_label.openai_base_url", "HOPPIFY_BEER_LABEL_OPENAI_BASE_URL")
+	_ = loader.BindEnv("beer_label.openai_timeout", "HOPPIFY_BEER_LABEL_OPENAI_TIMEOUT")
 	_ = loader.BindEnv("observability.service_name", "HOPPIFY_SERVICE_NAME", "OTEL_SERVICE_NAME")
 	_ = loader.BindEnv("observability.metrics.path", "HOPPIFY_METRICS_PATH")
 	_ = loader.BindEnv("observability.metrics.addr", "HOPPIFY_METRICS_ADDR")

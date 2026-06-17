@@ -12,6 +12,8 @@ Current production behavior:
 - `POST /api/v1/captures` accepts 1..10 JPEG, PNG, or WebP images as multipart `files`, converts them
   to JPEG quality 95, stores them in S3-compatible object storage, and records metadata in Postgres.
 - `POST /api/v1/detect` accepts a stored capture UUID and returns Ultralytics-style object detections.
+- `POST /api/v1/beer-labels/identify` accepts a stored capture or crop UUID, asks the configured OpenAI
+  vision model for structured beer label identification, and caches one result per UUID in Postgres.
 
 Required runtime dependencies:
 
@@ -23,6 +25,8 @@ Required runtime dependencies:
 - ONNX Runtime and the SKU-110K YOLO11s 640 ONNX model. Production and e2e Docker images download
   `weights/sku110k-yolo11-s640.onnx` during image build, verify its SHA256 checksum, and copy it to
   `/app/models/sku110k-yolo11-s640.onnx` with `libonnxruntime.so.1.22.0` under `/app/lib`.
+- OpenAI API access for beer label recognition. Configure `HOPPIFY_BEER_LABEL_OPENAI_API_KEY` or
+  `OPENAI_API_KEY`; without a key, the beer label endpoint returns `model_unavailable`.
 - Prometheus metrics on the configured metrics address, defaulting to `127.0.0.1:3001` locally.
 
 Configuration is loaded from `config/{local,dev,e2e,prod}.yaml`, selected by `HOPPIFY_ENV`, or from

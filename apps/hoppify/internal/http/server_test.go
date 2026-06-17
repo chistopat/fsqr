@@ -11,10 +11,13 @@ import (
 	"net/textproto"
 	"strings"
 	"testing"
+	"time"
 
+	beerlabelmodel "github.com/chistopat/hoppify/internal/models/beerlabel"
 	capturemodel "github.com/chistopat/hoppify/internal/models/capture"
 	cropmodel "github.com/chistopat/hoppify/internal/models/crop"
 	detectionmodel "github.com/chistopat/hoppify/internal/models/detection"
+	beerlabelservice "github.com/chistopat/hoppify/internal/service/beerlabels"
 	captureservice "github.com/chistopat/hoppify/internal/service/captures"
 	cropservice "github.com/chistopat/hoppify/internal/service/crops"
 	detectservice "github.com/chistopat/hoppify/internal/service/detect"
@@ -346,6 +349,113 @@ func TestCreateCropsRejectsUnknownRequestFields(t *testing.T) {
 	assertAPIError(t, response, http.StatusBadRequest, string(cropservice.InvalidRequest))
 }
 
+func TestIdentifyBeerLabelReturnsStructuredResponse(t *testing.T) {
+	t.Parallel()
+
+	expected := beerlabelmodel.Response{
+		UUID:          "0190b67a-dc55-769d-9d2e-92d6d29af3c7",
+		Model:         "chatgpt-5.4-mini",
+		PromptVersion: "beer-label-v1",
+		Cached:        false,
+		Result: beerlabelmodel.Result{
+			Status:     beerlabelmodel.StatusIdentified,
+			Container:  beerlabelmodel.ContainerBottle,
+			Confidence: 0.82,
+			Evidence:   []string{"label text appears readable"},
+		},
+		CreatedAt: time.Unix(1, 0).UTC(),
+	}
+	service := &fakeBeerLabelService{response: expected}
+	handler := NewHandler(WithBeerLabelService(service))
+	request := httptest.NewRequest(
+		http.MethodPost,
+		"/api/v1/beer-labels/identify",
+		strings.NewReader(`{"uuid":"0190b67a-dc55-769d-9d2e-92d6d29af3c7"}`),
+	)
+	response := httptest.NewRecorder()
+
+	handler.ServeHTTP(response, request)
+
+	if response.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d with body %q", http.StatusOK, response.Code, response.Body.String())
+	}
+	if service.uuid != "0190b67a-dc55-769d-9d2e-92d6d29af3c7" {
+		t.Fatalf("expected service uuid, got %q", service.uuid)
+	}
+
+	var actual beerlabelmodel.Response
+	if err := json.Unmarshal(response.Body.Bytes(), &actual); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if actual.Model != expected.Model || actual.Result.Status != expected.Result.Status || actual.Cached {
+		t.Fatalf("unexpected beer label response: %#v", actual)
+	}
+}
+
+func TestIdentifyBeerLabelRejectsUnknownRequestFields(t *testing.T) {
+	t.Parallel()
+
+	handler := NewHandler(WithBeerLabelService(&fakeBeerLabelService{}))
+	request := httptest.NewRequest(
+		http.MethodPost,
+		"/api/v1/beer-labels/identify",
+		strings.NewReader(`{"uuid":"0190b67a-dc55-769d-9d2e-92d6d29af3c7","extra":true}`),
+	)
+	response := httptest.NewRecorder()
+
+	handler.ServeHTTP(response, request)
+
+	assertAPIError(t, response, http.StatusBadRequest, string(beerlabelservice.InvalidRequest))
+}
+
+func TestIdentifyBeerLabelMapsServiceErrors(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name   string
+		err    error
+		status int
+		code   string
+	}{
+		{
+			name:   "not found",
+			err:    &beerlabelservice.Error{Code: beerlabelservice.NotFound, Message: "missing"},
+			status: http.StatusNotFound,
+			code:   string(beerlabelservice.NotFound),
+		},
+		{
+			name:   "model unavailable",
+			err:    &beerlabelservice.Error{Code: beerlabelservice.ModelUnavailable, Message: "not ready"},
+			status: http.StatusServiceUnavailable,
+			code:   string(beerlabelservice.ModelUnavailable),
+		},
+		{
+			name:   "inference error",
+			err:    &beerlabelservice.Error{Code: beerlabelservice.InferenceError, Message: "failed"},
+			status: http.StatusInternalServerError,
+			code:   string(beerlabelservice.InferenceError),
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			handler := NewHandler(WithBeerLabelService(&fakeBeerLabelService{err: tc.err}))
+			request := httptest.NewRequest(
+				http.MethodPost,
+				"/api/v1/beer-labels/identify",
+				strings.NewReader(`{"uuid":"0190b67a-dc55-769d-9d2e-92d6d29af3c7"}`),
+			)
+			response := httptest.NewRecorder()
+
+			handler.ServeHTTP(response, request)
+
+			assertAPIError(t, response, tc.status, tc.code)
+		})
+	}
+}
+
 func TestMetricsHandlerServesPrometheusMetrics(t *testing.T) {
 	t.Parallel()
 
@@ -391,6 +501,12 @@ type fakeCropService struct {
 	err      error
 }
 
+type fakeBeerLabelService struct {
+	response beerlabelmodel.Response
+	uuid     string
+	err      error
+}
+
 func (provider *fakeCaptureStatsProvider) CaptureStats(_ context.Context) (capturemodel.Stats, error) {
 	return provider.stats, nil
 }
@@ -414,6 +530,18 @@ func (service *fakeCropService) CreateCrops(
 	service.request = request
 	if service.err != nil {
 		return cropmodel.Response{}, service.err
+	}
+
+	return service.response, nil
+}
+
+func (service *fakeBeerLabelService) Identify(
+	_ context.Context,
+	rawUUID string,
+) (beerlabelmodel.Response, error) {
+	service.uuid = rawUUID
+	if service.err != nil {
+		return beerlabelmodel.Response{}, service.err
 	}
 
 	return service.response, nil

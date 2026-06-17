@@ -21,6 +21,11 @@ import (
 	_ "golang.org/x/image/webp"
 )
 
+const (
+	captureNamespace  = "dc8d926c-3559-4b27-96a6-54a802af5d0a"
+	captureUUIDPrefix = "hoppify-capture-v1|"
+)
+
 type Repository interface {
 	InsertCaptures(ctx context.Context, records []capturemodel.Record) error
 }
@@ -70,7 +75,7 @@ func NewService(repository Repository, storage ObjectStorage, cfg Config) (*Serv
 		bucket:      cfg.Bucket,
 		limits:      normalizeLimits(cfg.Limits),
 		jpegQuality: normalizeJPEGQuality(cfg.JPEGQuality),
-		newUUID:     uuidGeneratorOrDefault(cfg.NewUUID),
+		newUUID:     cfg.NewUUID,
 	}, nil
 }
 
@@ -156,12 +161,25 @@ func (svc *Service) prepareCapture(file capturemodel.UploadFile) (preparedCaptur
 		return preparedCapture{}, newError(InvalidRequest, "file cannot be converted to jpeg", err)
 	}
 
-	id, err := svc.newUUID()
+	checksum := sha256.Sum256(jpegBody)
+	checksumHex := hex.EncodeToString(checksum[:])
+
+	id, err := svc.captureUUID(checksumHex)
 	if err != nil {
 		return preparedCapture{}, newError(InternalError, "internal server error", err)
 	}
 
-	return svc.newPreparedCapture(file, id, format, img.Bounds(), jpegBody), nil
+	return svc.newPreparedCapture(file, id, format, img.Bounds(), jpegBody, checksumHex), nil
+}
+
+func (svc *Service) captureUUID(checksumHex string) (uuid.UUID, error) {
+	if svc.newUUID != nil {
+		return svc.newUUID()
+	}
+
+	namespace := uuid.MustParse(captureNamespace)
+
+	return uuid.NewSHA1(namespace, []byte(captureUUIDPrefix+checksumHex)), nil
 }
 
 func (svc *Service) newPreparedCapture(
@@ -170,8 +188,8 @@ func (svc *Service) newPreparedCapture(
 	format string,
 	bounds image.Rectangle,
 	jpegBody []byte,
+	checksumHex string,
 ) preparedCapture {
-	checksum := sha256.Sum256(jpegBody)
 	objectKey := fmt.Sprintf("captures/image/%s.jpg", id.String())
 
 	record := capturemodel.Record{
@@ -181,7 +199,7 @@ func (svc *Service) newPreparedCapture(
 		ObjectKey:      objectKey,
 		ContentType:    capturemodel.ContentTypeJPEG,
 		SizeBytes:      int64(len(jpegBody)),
-		ChecksumSHA256: hex.EncodeToString(checksum[:]),
+		ChecksumSHA256: checksumHex,
 		Metadata: buildMetadata(file, format, dimensions{
 			width:  bounds.Dx(),
 			height: bounds.Dy(),
@@ -294,14 +312,6 @@ func normalizeJPEGQuality(quality int) int {
 	}
 
 	return quality
-}
-
-func uuidGeneratorOrDefault(generator UUIDGenerator) UUIDGenerator {
-	if generator != nil {
-		return generator
-	}
-
-	return uuid.NewV7
 }
 
 var supportedContentTypes = map[string]struct{}{
