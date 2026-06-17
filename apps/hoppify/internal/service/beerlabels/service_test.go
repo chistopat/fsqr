@@ -139,7 +139,7 @@ func newCaptureRecord(captureID uuid.UUID) capturemodel.Record {
 func newRecognitionRecord(captureID uuid.UUID) beerlabelmodel.Record {
 	return beerlabelmodel.Record{
 		CaptureUUID:   captureID,
-		Model:         "chatgpt-5.4-mini",
+		Model:         "gpt-5.4-mini",
 		PromptVersion: "beer-label-v1",
 		Result: beerlabelmodel.Result{
 			Status:     beerlabelmodel.StatusUnreadable,
@@ -249,7 +249,7 @@ func (recognizer *fakeRecognizer) IdentifyBeerLabel(_ context.Context, _ []byte)
 }
 
 func (recognizer *fakeRecognizer) Model() string {
-	return "chatgpt-5.4-mini"
+	return "gpt-5.4-mini"
 }
 
 func (recognizer *fakeRecognizer) PromptVersion() string {

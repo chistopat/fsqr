@@ -19,7 +19,7 @@ import (
 
 const (
 	defaultBaseURL       = "https://api.openai.com/v1"
-	defaultModel         = "chatgpt-5.4-mini"
+	defaultModel         = "gpt-5.4-mini"
 	defaultTimeout       = 30 * time.Second
 	promptVersion        = "beer-label-v1"
 	openAIResponseFormat = "beer_label_recognition"

@@ -42,7 +42,7 @@ detector:
   max_detections: 300
 
 beer_label:
-  model: "chatgpt-5.4-mini"
+  model: "gpt-5.4-mini"
   openai_api_key: ""
   openai_base_url: "https://api.openai.com/v1"
   openai_timeout: 30s

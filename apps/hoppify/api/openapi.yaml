@@ -296,7 +296,7 @@ components:
           example: 3b7eaa56-f7a6-57e1-bff6-552b103bb263
         model:
           type: string
-          example: chatgpt-5.4-mini
+          example: gpt-5.4-mini
         promptVersion:
           type: string
           example: beer-label-v1

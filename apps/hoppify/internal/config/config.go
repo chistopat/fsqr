@@ -28,7 +28,7 @@ const (
 	defaultDetectorConfidence     = 0.25
 	defaultDetectorIOU            = 0.7
 	defaultDetectorMaxDetections  = 300
-	defaultBeerLabelModel         = "chatgpt-5.4-mini"
+	defaultBeerLabelModel         = "gpt-5.4-mini"
 	defaultBeerLabelOpenAIBaseURL = "https://api.openai.com/v1"
 	defaultBeerLabelOpenAITimeout = 30 * time.Second
 )

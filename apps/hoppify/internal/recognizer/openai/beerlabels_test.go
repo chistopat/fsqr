@@ -44,7 +44,7 @@ func TestClientUsesResponsesAPIWithImageAndJSONSchema(t *testing.T) {
 			"id":         "resp_test",
 			"object":     "response",
 			"created_at": 1,
-			"model":      "chatgpt-5.4-mini",
+			"model":      "gpt-5.4-mini",
 			"status":     "completed",
 			"output": []map[string]any{{
 				"id":     "msg_test",
@@ -66,7 +66,7 @@ func TestClientUsesResponsesAPIWithImageAndJSONSchema(t *testing.T) {
 	client, err := NewClient(Config{
 		APIKey:  "test-key",
 		BaseURL: server.URL,
-		Model:   "chatgpt-5.4-mini",
+		Model:   "gpt-5.4-mini",
 	})
 	if err != nil {
 		t.Fatalf("new client: %v", err)
@@ -80,7 +80,7 @@ func TestClientUsesResponsesAPIWithImageAndJSONSchema(t *testing.T) {
 	if result.Status != beerlabelmodel.StatusIdentified || result.Container != beerlabelmodel.ContainerBottle {
 		t.Fatalf("unexpected result: %#v", result)
 	}
-	if requestBody["model"] != "chatgpt-5.4-mini" {
+	if requestBody["model"] != "gpt-5.4-mini" {
 		t.Fatalf("unexpected model: %#v", requestBody["model"])
 	}
 	if requestBody["tools"] != nil {

@@ -354,7 +354,7 @@ func TestIdentifyBeerLabelReturnsStructuredResponse(t *testing.T) {
 
 	expected := beerlabelmodel.Response{
 		UUID:          "0190b67a-dc55-769d-9d2e-92d6d29af3c7",
-		Model:         "chatgpt-5.4-mini",
+		Model:         "gpt-5.4-mini",
 		PromptVersion: "beer-label-v1",
 		Cached:        false,
 		Result: beerlabelmodel.Result{

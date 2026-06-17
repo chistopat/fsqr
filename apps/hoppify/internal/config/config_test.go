@@ -87,8 +87,8 @@ func assertDetectorConfig(t *testing.T, cfg Config) {
 func assertBeerLabelConfig(t *testing.T, cfg Config) {
 	t.Helper()
 
-	if cfg.BeerLabel.Model != "chatgpt-5.4-mini" {
-		t.Fatalf("expected beer label model chatgpt-5.4-mini, got %q", cfg.BeerLabel.Model)
+	if cfg.BeerLabel.Model != "gpt-5.4-mini" {
+		t.Fatalf("expected beer label model gpt-5.4-mini, got %q", cfg.BeerLabel.Model)
 	}
 	if cfg.BeerLabel.OpenAIBaseURL != "https://api.openai.com/v1" {
 		t.Fatalf("expected beer label openai base url, got %q", cfg.BeerLabel.OpenAIBaseURL)
