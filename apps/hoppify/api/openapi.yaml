@@ -83,8 +83,218 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+  /api/v1/detect:
+    post:
+      summary: Detect objects in a capture image
+      description: >
+        Runs the configured object detector against a capture image.
+        The request references an image previously stored through `POST /api/v1/captures`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DetectRequest"
+            examples:
+              uuid:
+                summary: Detect by capture UUID
+                value:
+                  uuid: 018f7b8e-4d96-7b42-9f64-09e5d3a8e7c1
+      responses:
+        "200":
+          description: Objects were detected
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DetectResponse"
+        "400":
+          description: Invalid request or undecodable image
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Capture UUID was not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "415":
+          description: Unsupported image media type
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "502":
+          description: Object storage failed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "503":
+          description: Detection model is unavailable
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          description: Internal error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
 components:
   schemas:
+    DetectRequest:
+      type: object
+      required:
+        - uuid
+      properties:
+        uuid:
+          type: string
+          format: uuid
+          description: Capture UUID returned by `POST /api/v1/captures`.
+          example: 018f7b8e-4d96-7b42-9f64-09e5d3a8e7c1
+      additionalProperties: false
+    DetectResponse:
+      type: object
+      required:
+        - images
+        - metadata
+      properties:
+        images:
+          type: array
+          description: List of processed images. Hoppify detect processes one image per request.
+          minItems: 1
+          maxItems: 1
+          items:
+            $ref: "#/components/schemas/DetectImageResult"
+        metadata:
+          $ref: "#/components/schemas/DetectMetadata"
+      additionalProperties: false
+    DetectImageResult:
+      type: object
+      required:
+        - shape
+        - results
+        - speed
+      properties:
+        shape:
+          type: array
+          description: Original image dimensions in Ultralytics `[height, width]` format.
+          minItems: 2
+          maxItems: 2
+          items:
+            type: integer
+            minimum: 1
+          example:
+            - 720
+            - 1280
+        results:
+          type: array
+          description: Detections ordered by descending confidence after NMS.
+          items:
+            $ref: "#/components/schemas/Detection"
+        speed:
+          $ref: "#/components/schemas/DetectSpeed"
+      additionalProperties: false
+    DetectSpeed:
+      type: object
+      properties:
+        preprocess:
+          type: number
+          format: float
+          minimum: 0
+          description: Preprocess time in milliseconds.
+          example: 1.2
+        inference:
+          type: number
+          format: float
+          minimum: 0
+          description: ONNX inference time in milliseconds.
+          example: 12.5
+        postprocess:
+          type: number
+          format: float
+          minimum: 0
+          description: Postprocess time in milliseconds.
+          example: 2.3
+      additionalProperties: false
+    DetectMetadata:
+      type: object
+      required:
+        - uuid
+        - imageCount
+        - functionTimeCall
+      properties:
+        uuid:
+          type: string
+          format: uuid
+          description: Capture UUID used as the inference source.
+          example: 018f7b8e-4d96-7b42-9f64-09e5d3a8e7c1
+        imageCount:
+          type: integer
+          minimum: 1
+          example: 1
+        functionTimeCall:
+          type: number
+          format: float
+          minimum: 0
+          description: Total request processing time in seconds.
+          example: 0.018
+      additionalProperties: false
+    Detection:
+      type: object
+      required:
+        - name
+        - class
+        - confidence
+        - box
+      properties:
+        name:
+          type: string
+          description: Class name.
+          example: object
+        class:
+          type: integer
+          minimum: 0
+          description: Class ID.
+          example: 0
+        confidence:
+          type: number
+          format: float
+          minimum: 0
+          maximum: 1
+          example: 0.9134
+        box:
+          $ref: "#/components/schemas/BoundingBox"
+      additionalProperties: false
+    BoundingBox:
+      type: object
+      description: Absolute bounding box in original image pixels, using `[x1, y1, x2, y2]` coordinates.
+      required:
+        - x1
+        - y1
+        - x2
+        - y2
+      properties:
+        x1:
+          type: number
+          format: float
+          example: 112.4
+        y1:
+          type: number
+          format: float
+          example: 45.8
+        x2:
+          type: number
+          format: float
+          example: 180.2
+        y2:
+          type: number
+          format: float
+          example: 132.6
+      additionalProperties: false
     CapturesResponse:
       type: object
       required:
@@ -129,6 +339,9 @@ components:
                 - payload_too_large
                 - unsupported_media_type
                 - storage_error
+                - not_found
+                - model_unavailable
+                - inference_error
                 - internal_error
             message:
               type: string

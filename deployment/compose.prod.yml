@@ -52,6 +52,8 @@ services:
       HOPPIFY_S3_SECRET_ACCESS_KEY: ${HOPPIFY_S3_SECRET_ACCESS_KEY:-}
       HOPPIFY_S3_SESSION_TOKEN: ${HOPPIFY_S3_SESSION_TOKEN:-}
       HOPPIFY_S3_FORCE_PATH_STYLE: ${HOPPIFY_S3_FORCE_PATH_STYLE:-false}
+      HOPPIFY_DETECTOR_MODEL_PATH: /app/models/sku110k-yolo11-s640.onnx
+      HOPPIFY_DETECTOR_RUNTIME_LIBRARY_PATH: /app/lib/libonnxruntime.so.1.22.0
     depends_on:
       create-hoppify-db:
         condition: service_completed_successfully

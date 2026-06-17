@@ -4,11 +4,13 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"time"
 
 	capturemodel "github.com/chistopat/hoppify/internal/models/capture"
 
+	"github.com/google/uuid"
 	"go.uber.org/zap"
 )
 
@@ -61,6 +63,50 @@ func (repo *Repository) InsertCaptures(ctx context.Context, records []capturemod
 	)
 
 	return nil
+}
+
+func (repo *Repository) FindCaptureByUUID(ctx context.Context, id uuid.UUID) (capturemodel.Record, error) {
+	started := time.Now()
+	repo.log.Debug("pg find capture started", zap.String("uuid", id.String()))
+
+	var record capturemodel.Record
+	var metadata []byte
+	err := repo.db.QueryRowContext(
+		ctx,
+		`SELECT uuid, type, bucket, object_key, content_type, size_bytes, checksum_sha256, metadata
+		FROM captures
+		WHERE uuid = $1`,
+		id.String(),
+	).Scan(
+		&record.UUID,
+		&record.Type,
+		&record.Bucket,
+		&record.ObjectKey,
+		&record.ContentType,
+		&record.SizeBytes,
+		&record.ChecksumSHA256,
+		&metadata,
+	)
+	if errors.Is(err, sql.ErrNoRows) {
+		repo.log.Debug("pg find capture not found", zap.String("uuid", id.String()))
+		return capturemodel.Record{}, fmt.Errorf("%w: %s", capturemodel.ErrNotFound, id.String())
+	}
+	if err != nil {
+		repo.log.Error("pg find capture failed", zap.Error(err), zap.Duration("duration", time.Since(started)))
+		return capturemodel.Record{}, fmt.Errorf("query capture by uuid: %w", err)
+	}
+	if err := json.Unmarshal(metadata, &record.Metadata); err != nil {
+		repo.log.Error("pg decode capture metadata failed", zap.Error(err), zap.Duration("duration", time.Since(started)))
+		return capturemodel.Record{}, fmt.Errorf("decode capture metadata: %w", err)
+	}
+
+	repo.log.Debug(
+		"pg find capture completed",
+		zap.String("uuid", id.String()),
+		zap.Duration("duration", time.Since(started)),
+	)
+
+	return record, nil
 }
 
 func (repo *Repository) CaptureStats(ctx context.Context) (capturemodel.Stats, error) {

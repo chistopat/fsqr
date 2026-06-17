@@ -127,7 +127,13 @@ settings are not passed to the application as individual env vars.
 
 The `hoppify` container reads the `prod.yaml` bundled in its image and receives
 production database and S3 settings through `HOPPIFY_*` environment variables
-from `/opt/fsqr/.env`.
+from `/opt/fsqr/.env`. The Hoppify image itself contains the detector assets:
+`apps/hoppify/build/Dockerfile` downloads `weights/sku110k-yolo11-s640.onnx`
+from `chistopat/sku110k-yolo11-object-detector`, verifies the pinned SHA256,
+copies it to `/app/models/sku110k-yolo11-s640.onnx`, and copies
+`libonnxruntime.so.1.22.0` to `/app/lib`. No production volume or manual model
+sync is required unless `HOPPIFY_DETECTOR_MODEL_PATH` or
+`HOPPIFY_DETECTOR_RUNTIME_LIBRARY_PATH` is overridden.
 
 Run migrations independently after bootstrap:
 

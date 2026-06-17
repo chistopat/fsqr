@@ -23,6 +23,7 @@ type HandlerOption func(*handlerConfig)
 
 type handlerConfig struct {
 	captureService CaptureCreator
+	detectService  DetectorService
 	limits         capturemodel.Limits
 	log            *zap.Logger
 	metrics        *HTTPMetrics
@@ -31,6 +32,12 @@ type handlerConfig struct {
 func WithCaptureService(service CaptureCreator) HandlerOption {
 	return func(cfg *handlerConfig) {
 		cfg.captureService = service
+	}
+}
+
+func WithDetectService(service DetectorService) HandlerOption {
+	return func(cfg *handlerConfig) {
+		cfg.detectService = service
 	}
 }
 
@@ -68,6 +75,7 @@ func NewHandler(options ...HandlerOption) http.Handler {
 	mux.HandleFunc("GET /swagger", serveSwaggerViewer)
 	mux.HandleFunc("GET /swagger/", serveSwaggerViewer)
 	mux.HandleFunc("POST /api/v1/captures", createCaptures(cfg.captureService, cfg.limits, cfg.log))
+	mux.HandleFunc("POST /api/v1/detect", detectObjects(cfg.detectService, cfg.log))
 
 	return logAndMeasureRequests(mux, cfg.log, cfg.metrics)
 }

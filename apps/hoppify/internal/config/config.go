@@ -22,6 +22,12 @@ const (
 	defaultMaxFiles               = 10
 	defaultMaxFileBytes           = 15 * 1024 * 1024
 	defaultMaxRequestSize         = 150 * 1024 * 1024
+	defaultDetectorModelPath      = "models/sku110k-yolo11-s640.onnx"
+	defaultDetectorRuntimeLibrary = ""
+	defaultDetectorImageSize      = 640
+	defaultDetectorConfidence     = 0.25
+	defaultDetectorIOU            = 0.7
+	defaultDetectorMaxDetections  = 300
 )
 
 type Config struct {
@@ -31,6 +37,7 @@ type Config struct {
 	Database      DatabaseConfig      `mapstructure:"database"`
 	S3            S3Config            `mapstructure:"s3"`
 	Upload        UploadConfig        `mapstructure:"upload"`
+	Detector      DetectorConfig      `mapstructure:"detector"`
 	Observability ObservabilityConfig `mapstructure:"observability"`
 }
 
@@ -73,6 +80,15 @@ type UploadConfig struct {
 	MaxFileBytes    int64 `mapstructure:"max_file_bytes"`
 	MaxRequestBytes int64 `mapstructure:"max_request_bytes"`
 	JPEGQuality     int   `mapstructure:"jpeg_quality"`
+}
+
+type DetectorConfig struct {
+	ModelPath           string  `mapstructure:"model_path"`
+	RuntimeLibraryPath  string  `mapstructure:"runtime_library_path"`
+	ImageSize           int     `mapstructure:"image_size"`
+	ConfidenceThreshold float64 `mapstructure:"confidence_threshold"`
+	IOUThreshold        float64 `mapstructure:"iou_threshold"`
+	MaxDetections       int     `mapstructure:"max_detections"`
 }
 
 type ObservabilityConfig struct {
@@ -156,6 +172,12 @@ func setDefaults(loader *viper.Viper, env string) {
 	loader.SetDefault("upload.max_file_bytes", defaultMaxFileBytes)
 	loader.SetDefault("upload.max_request_bytes", defaultMaxRequestSize)
 	loader.SetDefault("upload.jpeg_quality", defaultJPEGQuality)
+	loader.SetDefault("detector.model_path", defaultDetectorModelPath)
+	loader.SetDefault("detector.runtime_library_path", defaultDetectorRuntimeLibrary)
+	loader.SetDefault("detector.image_size", defaultDetectorImageSize)
+	loader.SetDefault("detector.confidence_threshold", defaultDetectorConfidence)
+	loader.SetDefault("detector.iou_threshold", defaultDetectorIOU)
+	loader.SetDefault("detector.max_detections", defaultDetectorMaxDetections)
 	loader.SetDefault("observability.service_name", "hoppify")
 	loader.SetDefault("observability.metrics.path", "/metrics")
 	loader.SetDefault("observability.metrics.addr", "127.0.0.1:3001")
@@ -184,6 +206,12 @@ func bindEnv(loader *viper.Viper) {
 	_ = loader.BindEnv("upload.max_file_bytes", "HOPPIFY_UPLOAD_MAX_FILE_BYTES")
 	_ = loader.BindEnv("upload.max_request_bytes", "HOPPIFY_UPLOAD_MAX_REQUEST_BYTES")
 	_ = loader.BindEnv("upload.jpeg_quality", "HOPPIFY_UPLOAD_JPEG_QUALITY")
+	_ = loader.BindEnv("detector.model_path", "HOPPIFY_DETECTOR_MODEL_PATH")
+	_ = loader.BindEnv("detector.runtime_library_path", "HOPPIFY_DETECTOR_RUNTIME_LIBRARY_PATH")
+	_ = loader.BindEnv("detector.image_size", "HOPPIFY_DETECTOR_IMAGE_SIZE")
+	_ = loader.BindEnv("detector.confidence_threshold", "HOPPIFY_DETECTOR_CONFIDENCE_THRESHOLD")
+	_ = loader.BindEnv("detector.iou_threshold", "HOPPIFY_DETECTOR_IOU_THRESHOLD")
+	_ = loader.BindEnv("detector.max_detections", "HOPPIFY_DETECTOR_MAX_DETECTIONS")
 	_ = loader.BindEnv("observability.service_name", "HOPPIFY_SERVICE_NAME", "OTEL_SERVICE_NAME")
 	_ = loader.BindEnv("observability.metrics.path", "HOPPIFY_METRICS_PATH")
 	_ = loader.BindEnv("observability.metrics.addr", "HOPPIFY_METRICS_ADDR")

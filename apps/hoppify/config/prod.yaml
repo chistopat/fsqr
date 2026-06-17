@@ -33,6 +33,14 @@ upload:
   max_request_bytes: 157286400
   jpeg_quality: 95
 
+detector:
+  model_path: "models/sku110k-yolo11-s640.onnx"
+  runtime_library_path: "/app/lib/libonnxruntime.so.1.22.0"
+  image_size: 640
+  confidence_threshold: 0.25
+  iou_threshold: 0.7
+  max_detections: 300
+
 observability:
   service_name: hoppify
   metrics:

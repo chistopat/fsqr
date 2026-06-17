@@ -13,7 +13,9 @@ import (
 	"testing"
 
 	capturemodel "github.com/chistopat/hoppify/internal/models/capture"
+	detectionmodel "github.com/chistopat/hoppify/internal/models/detection"
 	captureservice "github.com/chistopat/hoppify/internal/service/captures"
+	detectservice "github.com/chistopat/hoppify/internal/service/detect"
 )
 
 func TestHandlerServesPlaceholderPage(t *testing.T) {
@@ -174,6 +176,117 @@ func TestCreateCapturesRejectsOversizedFile(t *testing.T) {
 	assertAPIError(t, response, http.StatusRequestEntityTooLarge, string(captureservice.PayloadTooLarge))
 }
 
+func TestDetectObjectsReturnsUltralyticsStyleResponse(t *testing.T) {
+	t.Parallel()
+
+	expected := detectionmodel.Response{
+		Images: []detectionmodel.ImageResult{{
+			Shape: [2]int{720, 1280},
+			Results: []detectionmodel.Detection{{
+				Class:      0,
+				Name:       "object",
+				Confidence: 0.91,
+				Box:        detectionmodel.Box{X1: 10, Y1: 20, X2: 30, Y2: 40},
+			}},
+			Speed: detectionmodel.Speed{Preprocess: 1.2, Inference: 12.5, Postprocess: 2.3},
+		}},
+		Metadata: detectionmodel.Metadata{
+			UUID:             "018f7b8e-4d96-7b42-9f64-09e5d3a8e7c1",
+			ImageCount:       1,
+			FunctionTimeCall: 0.018,
+		},
+	}
+	service := &fakeDetectService{response: expected}
+	handler := NewHandler(WithDetectService(service))
+	request := httptest.NewRequest(
+		http.MethodPost,
+		"/api/v1/detect",
+		strings.NewReader(`{"uuid":"018f7b8e-4d96-7b42-9f64-09e5d3a8e7c1"}`),
+	)
+	response := httptest.NewRecorder()
+
+	handler.ServeHTTP(response, request)
+
+	if response.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d with body %q", http.StatusOK, response.Code, response.Body.String())
+	}
+	if service.uuid != "018f7b8e-4d96-7b42-9f64-09e5d3a8e7c1" {
+		t.Fatalf("expected service uuid, got %q", service.uuid)
+	}
+
+	var actual detectionmodel.Response
+	if err := json.Unmarshal(response.Body.Bytes(), &actual); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if actual.Images[0].Results[0].Box.X2 != expected.Images[0].Results[0].Box.X2 {
+		t.Fatalf("expected detection box in response, got %#v", actual.Images[0].Results[0].Box)
+	}
+}
+
+func TestDetectObjectsRejectsUnknownRequestFields(t *testing.T) {
+	t.Parallel()
+
+	handler := NewHandler(WithDetectService(&fakeDetectService{}))
+	request := httptest.NewRequest(
+		http.MethodPost,
+		"/api/v1/detect",
+		strings.NewReader(`{"uuid":"018f7b8e-4d96-7b42-9f64-09e5d3a8e7c1","conf":0.1}`),
+	)
+	response := httptest.NewRecorder()
+
+	handler.ServeHTTP(response, request)
+
+	assertAPIError(t, response, http.StatusBadRequest, string(detectservice.InvalidRequest))
+}
+
+func TestDetectObjectsMapsServiceErrors(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name   string
+		err    error
+		status int
+		code   string
+	}{
+		{
+			name:   "not found",
+			err:    &detectservice.Error{Code: detectservice.NotFound, Message: "missing"},
+			status: http.StatusNotFound,
+			code:   string(detectservice.NotFound),
+		},
+		{
+			name:   "model unavailable",
+			err:    &detectservice.Error{Code: detectservice.ModelUnavailable, Message: "not ready"},
+			status: http.StatusServiceUnavailable,
+			code:   string(detectservice.ModelUnavailable),
+		},
+		{
+			name:   "inference error",
+			err:    &detectservice.Error{Code: detectservice.InferenceError, Message: "failed"},
+			status: http.StatusInternalServerError,
+			code:   string(detectservice.InferenceError),
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			handler := NewHandler(WithDetectService(&fakeDetectService{err: tc.err}))
+			request := httptest.NewRequest(
+				http.MethodPost,
+				"/api/v1/detect",
+				strings.NewReader(`{"uuid":"018f7b8e-4d96-7b42-9f64-09e5d3a8e7c1"}`),
+			)
+			response := httptest.NewRecorder()
+
+			handler.ServeHTTP(response, request)
+
+			assertAPIError(t, response, tc.status, tc.code)
+		})
+	}
+}
+
 func TestMetricsHandlerServesPrometheusMetrics(t *testing.T) {
 	t.Parallel()
 
@@ -207,8 +320,26 @@ type fakeCaptureStatsProvider struct {
 	stats capturemodel.Stats
 }
 
+type fakeDetectService struct {
+	response detectionmodel.Response
+	uuid     string
+	err      error
+}
+
 func (provider *fakeCaptureStatsProvider) CaptureStats(_ context.Context) (capturemodel.Stats, error) {
 	return provider.stats, nil
+}
+
+func (service *fakeDetectService) Detect(
+	_ context.Context,
+	rawUUID string,
+) (detectionmodel.Response, error) {
+	service.uuid = rawUUID
+	if service.err != nil {
+		return detectionmodel.Response{}, service.err
+	}
+
+	return service.response, nil
 }
 
 func (service *fakeCaptureService) CreateCaptures(

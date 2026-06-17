@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"io"
 	"strings"
 	"time"
 
@@ -111,6 +112,62 @@ func (storage *S3Storage) PutObject(ctx context.Context, object capturemodel.Obj
 	return fmt.Errorf("put s3 object %s/%s: %w", object.Bucket, object.ObjectKey, err)
 }
 
+func (storage *S3Storage) GetObject(
+	ctx context.Context,
+	bucket string,
+	objectKey string,
+	maxBytes int64,
+) (capturemodel.Object, error) {
+	started := time.Now()
+	storage.log.Info("s3 get object started", zap.String("bucket", bucket), zap.String("object_key", objectKey))
+
+	response, err := storage.client.GetObject(ctx, &s3.GetObjectInput{
+		Bucket: aws.String(bucket),
+		Key:    aws.String(objectKey),
+	})
+	if err != nil {
+		storage.log.Error(
+			"s3 get object failed",
+			zap.String("bucket", bucket),
+			zap.String("object_key", objectKey),
+			zap.Error(err),
+			zap.Duration("duration", time.Since(started)),
+		)
+		return capturemodel.Object{}, fmt.Errorf("get s3 object %s/%s: %w", bucket, objectKey, err)
+	}
+	defer func() {
+		_ = response.Body.Close()
+	}()
+
+	body, err := readObjectBody(response.Body, maxBytes)
+	if err != nil {
+		storage.log.Error(
+			"s3 read object failed",
+			zap.String("bucket", bucket),
+			zap.String("object_key", objectKey),
+			zap.Error(err),
+			zap.Duration("duration", time.Since(started)),
+		)
+		return capturemodel.Object{}, err
+	}
+
+	storage.log.Info(
+		"s3 get object completed",
+		zap.String("bucket", bucket),
+		zap.String("object_key", objectKey),
+		zap.Int("size_bytes", len(body)),
+		zap.Duration("duration", time.Since(started)),
+	)
+
+	return capturemodel.Object{
+		Bucket:         bucket,
+		ObjectKey:      objectKey,
+		ContentType:    aws.ToString(response.ContentType),
+		ChecksumSHA256: response.Metadata[checksumMetadataKey],
+		Body:           body,
+	}, nil
+}
+
 func (storage *S3Storage) DeleteObject(ctx context.Context, bucket, objectKey string) error {
 	started := time.Now()
 	storage.log.Info("s3 delete object started", zap.String("bucket", bucket), zap.String("object_key", objectKey))
@@ -138,6 +195,22 @@ func (storage *S3Storage) DeleteObject(ctx context.Context, bucket, objectKey st
 	)
 
 	return nil
+}
+
+func readObjectBody(body io.Reader, maxBytes int64) ([]byte, error) {
+	if maxBytes <= 0 {
+		return nil, fmt.Errorf("max object size must be positive")
+	}
+
+	data, err := io.ReadAll(io.LimitReader(body, maxBytes+1))
+	if err != nil {
+		return nil, fmt.Errorf("read s3 object body: %w", err)
+	}
+	if int64(len(data)) > maxBytes {
+		return nil, fmt.Errorf("s3 object exceeds maximum size")
+	}
+
+	return data, nil
 }
 
 func (storage *S3Storage) headChecksumMatches(ctx context.Context, object capturemodel.Object) bool {

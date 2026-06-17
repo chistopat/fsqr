@@ -13,10 +13,12 @@ import (
 
 	"github.com/chistopat/hoppify/internal/config"
 	"github.com/chistopat/hoppify/internal/db"
+	onnxdetector "github.com/chistopat/hoppify/internal/detector/onnx"
 	httpapi "github.com/chistopat/hoppify/internal/http"
 	"github.com/chistopat/hoppify/internal/logger"
 	capturerepo "github.com/chistopat/hoppify/internal/repository/captures"
 	captureservice "github.com/chistopat/hoppify/internal/service/captures"
+	detectservice "github.com/chistopat/hoppify/internal/service/detect"
 	"github.com/chistopat/hoppify/internal/storage"
 
 	"go.uber.org/zap"
@@ -77,11 +79,22 @@ func run() error {
 		return fmt.Errorf("init captures service: %w", err)
 	}
 
+	objectDetector, closeDetector := newDetectorBackend(cfg.Detector, appLogger.Named("detector.onnx"))
+	defer closeDetector()
+
+	detectService, err := detectservice.NewService(repository, objectStorage, objectDetector, detectservice.Config{
+		MaxObjectBytes: cfg.Upload.Limits().MaxFileBytes,
+	})
+	if err != nil {
+		return fmt.Errorf("init detect service: %w", err)
+	}
+
 	metrics := httpapi.NewMetrics(repository, appLogger.Named("metrics"))
 	server := &http.Server{
 		Addr: cfg.HTTP.Addr,
 		Handler: httpapi.NewHandler(
 			httpapi.WithCaptureService(captureService),
+			httpapi.WithDetectService(detectService),
 			httpapi.WithCaptureLimits(cfg.Upload.Limits()),
 			httpapi.WithLogger(appLogger.Named("http")),
 			httpapi.WithHTTPMetrics(metrics.HTTP),
@@ -95,6 +108,30 @@ func run() error {
 	}
 
 	return serveUntilStopped(appLogger, server, metricsServer, &cfg)
+}
+
+func newDetectorBackend(
+	cfg config.DetectorConfig,
+	detectorLog *zap.Logger,
+) (detectorBackend detectservice.Detector, closeDetector func()) {
+	detector, err := onnxdetector.NewDetector(onnxdetector.Config{
+		ModelPath:           cfg.ModelPath,
+		RuntimeLibraryPath:  cfg.RuntimeLibraryPath,
+		ImageSize:           cfg.ImageSize,
+		ConfidenceThreshold: cfg.ConfidenceThreshold,
+		IOUThreshold:        cfg.IOUThreshold,
+		MaxDetections:       cfg.MaxDetections,
+	})
+	if err != nil {
+		detectorLog.Error("onnx detector unavailable", zap.Error(err))
+		return detectservice.NewUnavailableDetector(err), func() {}
+	}
+
+	return detector, func() {
+		if err := detector.Close(); err != nil {
+			detectorLog.Error("close onnx detector failed", zap.Error(err))
+		}
+	}
 }
 
 func serveUntilStopped(appLog *zap.Logger, server, metricsServer *http.Server, cfg *config.Config) error {

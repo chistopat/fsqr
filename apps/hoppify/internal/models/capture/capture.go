@@ -1,6 +1,7 @@
 package capture
 
 import (
+	"errors"
 	"fmt"
 
 	"github.com/google/uuid"
@@ -10,6 +11,8 @@ const (
 	TypeImage       = "image"
 	ContentTypeJPEG = "image/jpeg"
 )
+
+var ErrNotFound = errors.New("capture not found")
 
 type Limits struct {
 	MaxFiles        int

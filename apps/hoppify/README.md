@@ -11,6 +11,7 @@ Current production behavior:
 - `GET /swagger.json` and `GET /swagger` serve OpenAPI documentation.
 - `POST /api/v1/captures` accepts 1..10 JPEG, PNG, or WebP images as multipart `files`, converts them
   to JPEG quality 95, stores them in S3-compatible object storage, and records metadata in Postgres.
+- `POST /api/v1/detect` accepts a stored capture UUID and returns Ultralytics-style object detections.
 
 Required runtime dependencies:
 
@@ -19,6 +20,9 @@ Required runtime dependencies:
   application credentials.
 - S3-compatible object storage, configured through the YAML files in `config/` with optional
   `HOPPIFY_*` env overrides.
+- ONNX Runtime and the SKU-110K YOLO11s 640 ONNX model. Production and e2e Docker images download
+  `weights/sku110k-yolo11-s640.onnx` during image build, verify its SHA256 checksum, and copy it to
+  `/app/models/sku110k-yolo11-s640.onnx` with `libonnxruntime.so.1.22.0` under `/app/lib`.
 - Prometheus metrics on the configured metrics address, defaulting to `127.0.0.1:3001` locally.
 
 Configuration is loaded from `config/{local,dev,e2e,prod}.yaml`, selected by `HOPPIFY_ENV`, or from
@@ -45,3 +49,7 @@ Run Hoppify functional tests against the Compose stack with:
 ```sh
 just test-hoppify-e2e
 ```
+
+The Hoppify e2e suite uploads `tests/fixtures/detect-shelf.jpg`, calls `/api/v1/detect` by UUID, and
+asserts real model bounding boxes. The same e2e suite runs in CI after building the Docker image that
+contains the model and ONNX Runtime.

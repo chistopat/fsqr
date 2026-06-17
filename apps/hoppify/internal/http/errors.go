@@ -6,6 +6,7 @@ import (
 	"net/http"
 
 	captureservice "github.com/chistopat/hoppify/internal/service/captures"
+	detectservice "github.com/chistopat/hoppify/internal/service/detect"
 )
 
 type errorResponse struct {
@@ -44,6 +45,31 @@ func writeCaptureError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusBadGateway, string(captureErr.Code), captureErr.Message)
 	default:
 		writeError(w, http.StatusInternalServerError, string(captureservice.InternalError), "internal server error")
+	}
+}
+
+func writeDetectError(w http.ResponseWriter, err error) {
+	var detectErr *detectservice.Error
+	if !errors.As(err, &detectErr) {
+		writeError(w, http.StatusInternalServerError, string(detectservice.InternalError), "internal server error")
+		return
+	}
+
+	switch detectErr.Code {
+	case detectservice.InvalidRequest:
+		writeError(w, http.StatusBadRequest, string(detectErr.Code), detectErr.Message)
+	case detectservice.UnsupportedMediaType:
+		writeError(w, http.StatusUnsupportedMediaType, string(detectErr.Code), detectErr.Message)
+	case detectservice.StorageError:
+		writeError(w, http.StatusBadGateway, string(detectErr.Code), detectErr.Message)
+	case detectservice.NotFound:
+		writeError(w, http.StatusNotFound, string(detectErr.Code), detectErr.Message)
+	case detectservice.ModelUnavailable:
+		writeError(w, http.StatusServiceUnavailable, string(detectErr.Code), detectErr.Message)
+	case detectservice.InferenceError:
+		writeError(w, http.StatusInternalServerError, string(detectErr.Code), detectErr.Message)
+	default:
+		writeError(w, http.StatusInternalServerError, string(detectservice.InternalError), "internal server error")
 	}
 }
 

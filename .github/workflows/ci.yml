@@ -164,7 +164,9 @@ jobs:
         with:
           go-version-file: apps/fsqr/go.mod
           cache: true
-          cache-dependency-path: apps/fsqr/go.sum
+          cache-dependency-path: |
+            apps/fsqr/go.sum
+            apps/hoppify/go.sum
 
       - name: Restore TEI model cache
         uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
@@ -262,7 +264,7 @@ jobs:
         working-directory: apps/fsqr
         run: GOWORK=off go test -tags=e2e -count=1 -v ./tests
 
-      - name: Run Hoppify e2e tests
+      - name: Run Hoppify captures and detect e2e tests
         env:
           BASE_URL: http://127.0.0.1:3100
           TEST_DATABASE_URL: postgres://hoppify:hoppify@127.0.0.1:5432/hoppify_test?sslmode=disable
