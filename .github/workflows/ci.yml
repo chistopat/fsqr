@@ -182,6 +182,7 @@ jobs:
       - name: Pull runtime images
         run: |
           docker pull "$TEI_IMAGE"
+          docker pull "$GOOSE_RUNNER_IMAGE"
           docker compose -f deployment/compose.e2e.yml pull --policy missing postgres
 
       - name: Build fsqr image
@@ -216,8 +217,8 @@ jobs:
           \gexec
           SQL
 
-          "${compose[@]}" run --build --rm migrate-fsqr
-          "${compose[@]}" run --build --rm migrate-hoppify
+          "${compose[@]}" run --rm migrate-fsqr
+          "${compose[@]}" run --rm migrate-hoppify
           "${compose[@]}" up -d --no-build fsqr hoppify
 
       - name: Wait for services
