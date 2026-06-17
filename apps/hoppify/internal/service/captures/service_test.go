@@ -134,6 +134,40 @@ func TestServiceDeletesUploadedObjectsWhenInsertFails(t *testing.T) {
 	}
 }
 
+func TestServiceCreatesSameCaptureForSameImage(t *testing.T) {
+	t.Parallel()
+
+	repository := &fakeRepository{}
+	storage := &fakeStorage{}
+	service := newDeterministicTestService(t, repository, storage)
+	file := newPNGUploadFile(t, "same.png")
+
+	first, err := service.CreateCaptures(context.Background(), []capturemodel.UploadFile{file})
+	if err != nil {
+		t.Fatalf("create captures: %v", err)
+	}
+	second, err := service.CreateCaptures(context.Background(), []capturemodel.UploadFile{file})
+	if err != nil {
+		t.Fatalf("create captures again: %v", err)
+	}
+
+	if len(first) != 1 || len(second) != 1 {
+		t.Fatalf("expected one capture per request, got first=%d second=%d", len(first), len(second))
+	}
+	if first[0] != second[0] {
+		t.Fatalf("expected retry to return same capture, got first=%#v second=%#v", first[0], second[0])
+	}
+	if len(repository.records) != 1 {
+		t.Fatalf("expected one stored record across retries, got %d", len(repository.records))
+	}
+	if len(storage.puts) != 2 {
+		t.Fatalf("expected object upload to be retried idempotently, got %d puts", len(storage.puts))
+	}
+	if storage.puts[0].ObjectKey != storage.puts[1].ObjectKey {
+		t.Fatalf("expected same object key across retries, got %q and %q", storage.puts[0].ObjectKey, storage.puts[1].ObjectKey)
+	}
+}
+
 func newTestService(t *testing.T, repository Repository, storage ObjectStorage) *Service {
 	t.Helper()
 
@@ -156,6 +190,25 @@ func newTestService(t *testing.T, repository Repository, storage ObjectStorage) 
 			nextID++
 			return id, nil
 		},
+	})
+	if err != nil {
+		t.Fatalf("new service: %v", err)
+	}
+
+	return service
+}
+
+func newDeterministicTestService(t *testing.T, repository Repository, storage ObjectStorage) *Service {
+	t.Helper()
+
+	service, err := NewService(repository, storage, Config{
+		Bucket: "hoppify",
+		Limits: capturemodel.Limits{
+			MaxFiles:        10,
+			MaxFileBytes:    1024 * 1024,
+			MaxRequestBytes: 10 * 1024 * 1024,
+		},
+		JPEGQuality: 95,
 	})
 	if err != nil {
 		t.Fatalf("new service: %v", err)
@@ -215,9 +268,24 @@ func (repo *fakeRepository) InsertCaptures(_ context.Context, records []capturem
 	if repo.err != nil {
 		return repo.err
 	}
-	repo.records = append(repo.records, records...)
+	for index := range records {
+		if repo.hasRecord(records[index].UUID) {
+			continue
+		}
+		repo.records = append(repo.records, records[index])
+	}
 
 	return nil
+}
+
+func (repo *fakeRepository) hasRecord(id uuid.UUID) bool {
+	for index := range repo.records {
+		if repo.records[index].UUID == id {
+			return true
+		}
+	}
+
+	return false
 }
 
 type fakeStorage struct {

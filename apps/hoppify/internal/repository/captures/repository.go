@@ -218,7 +218,8 @@ func insertCapture(ctx context.Context, tx *sql.Tx, record *capturemodel.Record)
 			size_bytes,
 			checksum_sha256,
 			metadata
-		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::jsonb)`,
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::jsonb)
+		ON CONFLICT (uuid) DO NOTHING`,
 		record.UUID.String(),
 		parentUUID,
 		record.Type,

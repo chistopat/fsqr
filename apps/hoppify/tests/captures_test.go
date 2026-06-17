@@ -195,6 +195,35 @@ func TestCreateCaptureValidationRejectsBadRequests(t *testing.T) {
 	}
 }
 
+func TestCreateCaptureIsIdempotentForSameImage(t *testing.T) {
+	db := openDatabase(t)
+	truncateCaptures(t, db)
+	s3Client := newS3Client(t)
+	baseURL := envDefault("BASE_URL", defaultBaseURL)
+	file := multipartFile{
+		Filename:    "capture.png",
+		ContentType: "image/png",
+		Body:        newPNG(t),
+	}
+
+	first := postCapture(t, baseURL, []multipartFile{file})
+	second := postCapture(t, baseURL, []multipartFile{file})
+	if len(first.Captures) != 1 || len(second.Captures) != 1 {
+		t.Fatalf("expected one capture per response, got first=%d second=%d", len(first.Captures), len(second.Captures))
+	}
+	if first.Captures[0] != second.Captures[0] {
+		t.Fatalf("expected retry to return same capture, got first=%#v second=%#v", first.Captures[0], second.Captures[0])
+	}
+
+	capture := first.Captures[0]
+	row := queryCapture(t, db, capture.UUID)
+	t.Cleanup(func() {
+		deleteCapture(t, db, capture.UUID)
+		deleteObject(t, s3Client, row.Bucket, row.ObjectKey)
+	})
+	assertCaptureCount(t, db, 1)
+}
+
 func postCapture(t *testing.T, baseURL string, files []multipartFile) captureResponse {
 	t.Helper()
 
