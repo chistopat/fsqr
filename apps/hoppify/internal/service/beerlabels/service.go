@@ -15,7 +15,11 @@ import (
 	"github.com/google/uuid"
 )
 
-const defaultMaxObjectBytes = 15 * 1024 * 1024
+const (
+	defaultMaxObjectBytes = 15 * 1024 * 1024
+	defaultListLimit      = 30
+	maxListLimit          = 100
+)
 
 type CaptureRepository interface {
 	FindCaptureByUUID(ctx context.Context, id uuid.UUID) (capturemodel.Record, error)
@@ -28,6 +32,7 @@ type RecognitionRepository interface {
 		promptVersion string,
 	) (beerlabelmodel.Record, error)
 	InsertBeerLabelRecognition(ctx context.Context, record *beerlabelmodel.Record) error
+	ListBeerLabelRecognitions(ctx context.Context, query capturemodel.ListQuery) (beerlabelmodel.ListResult, error)
 }
 
 type ObjectStorage interface {
@@ -98,6 +103,20 @@ func (svc *Service) Identify(ctx context.Context, request beerlabelmodel.Request
 	}
 
 	return svc.identifyByS3URL(ctx, request.ImageURL())
+}
+
+func (svc *Service) ListRecognitions(
+	ctx context.Context,
+	query capturemodel.ListQuery,
+) (beerlabelmodel.ListResponse, error) {
+	query = normalizeListQuery(query)
+
+	result, err := svc.recognitions.ListBeerLabelRecognitions(ctx, query)
+	if err != nil {
+		return beerlabelmodel.ListResponse{}, newError(InternalError, "internal server error", err)
+	}
+
+	return beerlabelmodel.ListResponseFromRecords(result.Records, query, result.HasMore), nil
 }
 
 func (svc *Service) identifyByUUID(ctx context.Context, rawUUID string) (beerlabelmodel.Response, error) {
@@ -256,6 +275,20 @@ func normalizeMaxObjectBytes(maxObjectBytes int64) int64 {
 	}
 
 	return maxObjectBytes
+}
+
+func normalizeListQuery(query capturemodel.ListQuery) capturemodel.ListQuery {
+	if query.Limit <= 0 {
+		query.Limit = defaultListLimit
+	}
+	if query.Limit > maxListLimit {
+		query.Limit = maxListLimit
+	}
+	if query.Offset < 0 {
+		query.Offset = 0
+	}
+
+	return query
 }
 
 func validateRequestSource(request beerlabelmodel.Request) error {

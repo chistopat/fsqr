@@ -137,6 +137,14 @@ button:hover {
     0 7px 0 -5px currentColor;
 }
 
+.recognitions-icon {
+  border-radius: 2px;
+  box-shadow:
+    6px 0 0 -5px currentColor,
+    0 6px 0 -5px currentColor,
+    6px 6px 0 -5px currentColor;
+}
+
 .workspace {
   display: grid;
   min-width: 0;
@@ -272,6 +280,126 @@ h1 {
   color: var(--text);
   font-weight: 700;
   text-align: right;
+}
+
+.recognitions-panel {
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  box-shadow: var(--shadow);
+}
+
+.recognitions-table-wrap {
+  overflow-x: auto;
+}
+
+.recognitions-table {
+  width: 100%;
+  min-width: 1120px;
+  border-collapse: collapse;
+  font-size: 0.86rem;
+}
+
+.recognitions-table th,
+.recognitions-table td {
+  padding: 11px 12px;
+  border-bottom: 1px solid var(--line);
+  text-align: left;
+  vertical-align: middle;
+}
+
+.recognitions-table th {
+  color: #5c6974;
+  background: #f8faf9;
+  font-size: 0.76rem;
+  font-weight: 900;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
+.recognitions-table tbody tr:hover {
+  background: #f7fbf9;
+}
+
+.recognitions-table tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.crop-cell {
+  width: 86px;
+}
+
+.recognition-crop {
+  display: grid;
+  width: 62px;
+  height: 78px;
+  place-items: center;
+  overflow: hidden;
+  border: 1px solid #25313c;
+  border-radius: 6px;
+  color: #aeb8c2;
+  background: #0d1117;
+  font-weight: 800;
+}
+
+.recognition-crop img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.strong-cell {
+  min-width: 150px;
+  font-weight: 800;
+}
+
+.numeric-cell {
+  width: 104px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.model-cell,
+.date-cell {
+  max-width: 180px;
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 0.8rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.status-pill {
+  display: inline-flex;
+  min-height: 26px;
+  align-items: center;
+  padding: 4px 8px;
+  border-radius: 999px;
+  font-size: 0.78rem;
+  font-weight: 900;
+  white-space: nowrap;
+}
+
+.status-identified {
+  color: #14543f;
+  background: #dff3ea;
+}
+
+.status-uncertain {
+  color: #7a4a12;
+  background: #fff0d7;
+}
+
+.status-not-beer {
+  color: #8f241d;
+  background: #ffe2df;
+}
+
+.status-muted {
+  color: #4f5c66;
+  background: #e9eef1;
 }
 
 .state,

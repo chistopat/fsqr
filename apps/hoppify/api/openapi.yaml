@@ -354,6 +354,47 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+  /api/v1/beer-labels/recognitions:
+    get:
+      summary: List beer label recognition results
+      description: Returns stored model recognition results with the crop capture used as input.
+      parameters:
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 30
+          description: Maximum number of recognitions to return.
+        - name: offset
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 0
+            default: 0
+          description: Number of recognitions to skip.
+      responses:
+        "200":
+          description: Beer label recognitions were listed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BeerLabelRecognitionListResponse"
+        "400":
+          description: Invalid pagination query
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          description: Internal error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
   /api/v1/beer-labels/identify:
     post:
       summary: Identify a beer label from a stored image
@@ -473,6 +514,61 @@ components:
         createdAt:
           type: string
           format: date-time
+      additionalProperties: false
+    BeerLabelRecognitionListResponse:
+      type: object
+      required:
+        - recognitions
+        - limit
+        - offset
+        - hasMore
+      properties:
+        recognitions:
+          type: array
+          items:
+            $ref: "#/components/schemas/BeerLabelRecognitionListItem"
+        limit:
+          type: integer
+          example: 30
+        offset:
+          type: integer
+          example: 0
+        nextOffset:
+          type: integer
+          example: 30
+        hasMore:
+          type: boolean
+          example: true
+      additionalProperties: false
+    BeerLabelRecognitionListItem:
+      type: object
+      required:
+        - uuid
+        - crop
+        - model
+        - promptVersion
+        - result
+        - createdAt
+      properties:
+        uuid:
+          type: string
+          format: uuid
+          description: Crop UUID used for recognition.
+          example: 3b7eaa56-f7a6-57e1-bff6-552b103bb263
+        crop:
+          $ref: "#/components/schemas/CaptureListItem"
+        model:
+          type: string
+          example: gemini-2.5-flash-lite
+        promptVersion:
+          type: string
+          example: beer-label-v3-gemini-2.5-flash-lite
+        result:
+          $ref: "#/components/schemas/BeerLabelResult"
+        createdAt:
+          type: string
+          format: date-time
+          description: Time when the recognition record was stored.
       additionalProperties: false
     BeerLabelResult:
       type: object

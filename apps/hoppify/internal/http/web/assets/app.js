@@ -39,6 +39,24 @@ const SECTIONS = {
     gridClass: "crop-grid",
     cardClass: "crop-card",
   },
+  recognitions: {
+    key: "recognitions",
+    label: "Recognitions",
+    title: "Recognitions",
+    kicker: "Model results",
+    counterLabel: "Loaded recognitions",
+    endpoint: "/api/v1/beer-labels/recognitions",
+    responseKey: "recognitions",
+    emptyText: "No recognitions yet",
+    endText: "End of recognitions",
+    loadingText: "Loading recognitions...",
+    loadingMoreText: "Loading more recognitions...",
+    singular: "recognition",
+    plural: "recognitions",
+    errorText: "Failed to load recognitions",
+    ariaLabel: "Recognitions",
+    view: "recognitions",
+  },
 };
 
 function App() {
@@ -174,16 +192,27 @@ function GalleryWorkspace({ section }) {
     h(
       "main",
       { className: "content", "aria-label": section.ariaLabel },
-      h(Gallery, {
-        error,
-        hasMore,
-        items,
-        onLoadMore: loadMore,
-        onRetry: items.length === 0 ? loadFirstPage : loadMore,
-        section,
-        sentinelRef,
-        status,
-      }),
+      section.view === "recognitions"
+        ? h(RecognitionTable, {
+            error,
+            hasMore,
+            items,
+            onLoadMore: loadMore,
+            onRetry: items.length === 0 ? loadFirstPage : loadMore,
+            section,
+            sentinelRef,
+            status,
+          })
+        : h(Gallery, {
+            error,
+            hasMore,
+            items,
+            onLoadMore: loadMore,
+            onRetry: items.length === 0 ? loadFirstPage : loadMore,
+            section,
+            sentinelRef,
+            status,
+          }),
     ),
     h(Footer),
   );
@@ -221,7 +250,7 @@ function Header({ section, totalLabel }) {
     h(
       "div",
       null,
-      h("p", { className: "section-kicker" }, "Gallery"),
+      h("p", { className: "section-kicker" }, section.kicker || "Gallery"),
       h("h1", null, section.title),
     ),
     h("div", { className: "counter", "aria-label": section.counterLabel }, totalLabel),
@@ -271,6 +300,122 @@ function Gallery({ error, hasMore, items, onLoadMore, onRetry, section, sentinel
           h("button", { type: "button", onClick: onRetry }, "Retry"),
         )
       : null,
+  );
+}
+
+function RecognitionTable({ error, hasMore, items, onLoadMore, onRetry, section, sentinelRef, status }) {
+  if (status === "loading" && items.length === 0) {
+    return h("div", { className: "state" }, section.loadingText);
+  }
+
+  if (status === "error" && items.length === 0) {
+    return h(
+      "div",
+      { className: "state error-state" },
+      h("span", null, error || section.errorText),
+      h("button", { type: "button", onClick: onRetry }, "Retry"),
+    );
+  }
+
+  if (items.length === 0) {
+    return h("div", { className: "state" }, section.emptyText);
+  }
+
+  return h(
+    React.Fragment,
+    null,
+    h(
+      "section",
+      { className: "recognitions-panel" },
+      h(
+        "div",
+        { className: "recognitions-table-wrap" },
+        h(
+          "table",
+          { className: "recognitions-table" },
+          h(
+            "thead",
+            null,
+            h(
+              "tr",
+              null,
+              h("th", { scope: "col" }, "Crop"),
+              h("th", { scope: "col" }, "Name"),
+              h("th", { scope: "col" }, "Brewery"),
+              h("th", { scope: "col" }, "Style"),
+              h("th", { scope: "col" }, "Country"),
+              h("th", { scope: "col" }, "ABV"),
+              h("th", { scope: "col" }, "Confidence"),
+              h("th", { scope: "col" }, "Status"),
+              h("th", { scope: "col" }, "Model"),
+              h("th", { scope: "col" }, "Recognized"),
+            ),
+          ),
+          h(
+            "tbody",
+            null,
+            items.map((item) => h(RecognitionRow, { item, key: `${item.uuid}:${item.promptVersion}` })),
+          ),
+        ),
+      ),
+    ),
+    h(
+      "div",
+      { className: "scroll-status", ref: sentinelRef },
+      status === "loading-more"
+        ? section.loadingMoreText
+        : hasMore
+          ? h("button", { type: "button", onClick: onLoadMore }, "Load more")
+          : section.endText,
+    ),
+    status === "error"
+      ? h(
+          "div",
+          { className: "inline-error" },
+          h("span", null, error || section.errorText),
+          h("button", { type: "button", onClick: onRetry }, "Retry"),
+        )
+      : null,
+  );
+}
+
+function RecognitionRow({ item }) {
+  const result = item.result || {};
+  const crop = item.crop || {};
+  const title = [optionalText(result.beerName), optionalText(result.brewery)].filter((value) => value !== "-").join(" - ");
+  const cropTitle = title || crop.uuid || item.uuid || "Recognition crop";
+
+  return h(
+    "tr",
+    null,
+    h(
+      "td",
+      { className: "crop-cell" },
+      h(
+        "div",
+        { className: "recognition-crop" },
+        crop.imageUrl
+          ? h("img", {
+              alt: cropTitle,
+              loading: "lazy",
+              src: crop.imageUrl,
+            })
+          : h("span", null, "-"),
+      ),
+    ),
+    h("td", { className: "strong-cell" }, optionalText(result.beerName)),
+    h("td", null, optionalText(result.brewery)),
+    h("td", null, optionalText(result.style)),
+    h("td", null, optionalText(result.country)),
+    h("td", { className: "numeric-cell" }, formatABV(result.abv)),
+    h("td", { className: "numeric-cell" }, formatConfidence(result.confidence)),
+    h(
+      "td",
+      null,
+      h("span", { className: `status-pill ${statusClass(result.status)}` }, statusLabel(result.status)),
+    ),
+    h("td", { className: "model-cell", title: item.model || "" }, optionalText(item.model)),
+    h("td", { className: "date-cell" }, formatDate(item.createdAt)),
   );
 }
 
@@ -363,6 +508,57 @@ function formatBytes(value) {
   }
 
   return `${size.toFixed(unit === 0 ? 0 : 1)} ${units[unit]}`;
+}
+
+function optionalText(value) {
+  if (typeof value !== "string") {
+    return "-";
+  }
+
+  const trimmed = value.trim();
+
+  return trimmed || "-";
+}
+
+function formatABV(value) {
+  if (!Number.isFinite(value) || value <= 0) {
+    return "-";
+  }
+
+  return `${value.toFixed(value % 1 === 0 ? 0 : 1)}%`;
+}
+
+function formatConfidence(value) {
+  if (!Number.isFinite(value)) {
+    return "-";
+  }
+
+  return `${Math.round(value * 100)}%`;
+}
+
+function statusLabel(status) {
+  const labels = {
+    identified: "Identified",
+    uncertain: "Uncertain",
+    unreadable: "Unreadable",
+    not_beer: "Not beer",
+  };
+
+  return labels[status] || optionalText(status);
+}
+
+function statusClass(status) {
+  if (status === "identified") {
+    return "status-identified";
+  }
+  if (status === "uncertain") {
+    return "status-uncertain";
+  }
+  if (status === "not_beer") {
+    return "status-not-beer";
+  }
+
+  return "status-muted";
 }
 
 ReactDOM.createRoot(document.getElementById("root")).render(h(App));

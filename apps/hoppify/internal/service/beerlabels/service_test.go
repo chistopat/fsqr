@@ -218,6 +218,33 @@ func TestServiceIdentifiesS3URLWithoutCaptureCache(t *testing.T) {
 	}
 }
 
+func TestServiceListsRecognitions(t *testing.T) {
+	t.Parallel()
+
+	captureID := uuid.MustParse(testCaptureUUID)
+	recognitions := newFakeRecognitionRepository()
+	recognitions.listResult = beerlabelmodel.ListResult{
+		Records: []beerlabelmodel.ListRecord{{
+			Crop:        newCaptureRecord(captureID),
+			Recognition: newRecognitionRecord(captureID),
+		}},
+		HasMore: true,
+	}
+	service := newTestService(t, &fakeCaptureRepository{}, recognitions, &fakeStorage{}, &fakeRecognizer{})
+
+	response, err := service.ListRecognitions(context.Background(), capturemodel.ListQuery{Limit: 0, Offset: -1})
+	if err != nil {
+		t.Fatalf("list recognitions: %v", err)
+	}
+
+	if recognitions.listQuery != (capturemodel.ListQuery{Limit: defaultListLimit, Offset: 0}) {
+		t.Fatalf("unexpected list query: %#v", recognitions.listQuery)
+	}
+	if len(response.Recognitions) != 1 || response.Recognitions[0].Crop.ImageURL == "" || !response.HasMore {
+		t.Fatalf("unexpected recognition list response: %#v", response)
+	}
+}
+
 func newTestService(
 	t *testing.T,
 	captures CaptureRepository,
@@ -292,9 +319,11 @@ func (repo *fakeCaptureRepository) FindCaptureByUUID(_ context.Context, id uuid.
 }
 
 type fakeRecognitionRepository struct {
-	records  map[string]beerlabelmodel.Record
-	inserted int
-	err      error
+	records    map[string]beerlabelmodel.Record
+	listResult beerlabelmodel.ListResult
+	listQuery  capturemodel.ListQuery
+	inserted   int
+	err        error
 }
 
 func newFakeRecognitionRepository(records ...beerlabelmodel.Record) *fakeRecognitionRepository {
@@ -333,6 +362,18 @@ func (repo *fakeRecognitionRepository) InsertBeerLabelRecognition(
 	repo.records[recognitionKey(record.CaptureUUID, record.PromptVersion)] = *record
 
 	return nil
+}
+
+func (repo *fakeRecognitionRepository) ListBeerLabelRecognitions(
+	_ context.Context,
+	query capturemodel.ListQuery,
+) (beerlabelmodel.ListResult, error) {
+	repo.listQuery = query
+	if repo.err != nil {
+		return beerlabelmodel.ListResult{}, repo.err
+	}
+
+	return repo.listResult, nil
 }
 
 func recognitionKey(captureID uuid.UUID, promptVersion string) string {

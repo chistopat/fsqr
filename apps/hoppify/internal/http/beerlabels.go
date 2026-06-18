@@ -6,6 +6,7 @@ import (
 	"net/http"
 
 	beerlabelmodel "github.com/chistopat/hoppify/internal/models/beerlabel"
+	capturemodel "github.com/chistopat/hoppify/internal/models/capture"
 	beerlabelservice "github.com/chistopat/hoppify/internal/service/beerlabels"
 
 	"go.uber.org/zap"
@@ -13,6 +14,38 @@ import (
 
 type BeerLabelIdentifier interface {
 	Identify(ctx context.Context, request beerlabelmodel.Request) (beerlabelmodel.Response, error)
+}
+
+type BeerLabelRecognitionLister interface {
+	ListRecognitions(ctx context.Context, query capturemodel.ListQuery) (beerlabelmodel.ListResponse, error)
+}
+
+func listBeerLabelRecognitions(service BeerLabelRecognitionLister, log *zap.Logger) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if service == nil {
+			writeError(w, http.StatusInternalServerError, string(beerlabelservice.InternalError), "internal server error")
+			return
+		}
+
+		query, ok := readCaptureListQuery(w, r)
+		if !ok {
+			return
+		}
+
+		loggerOrNop(log).Debug(
+			"list beer label recognitions request accepted",
+			zap.Int("limit", query.Limit),
+			zap.Int("offset", query.Offset),
+		)
+		response, err := service.ListRecognitions(r.Context(), query)
+		if err != nil {
+			loggerOrNop(log).Error("list beer label recognitions request failed", zap.Error(err))
+			writeBeerLabelError(w, err)
+			return
+		}
+
+		writeJSON(w, http.StatusOK, response)
+	}
 }
 
 func identifyBeerLabel(service BeerLabelIdentifier, log *zap.Logger) http.HandlerFunc {

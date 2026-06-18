@@ -29,6 +29,7 @@ type handlerConfig struct {
 	cropService          CropCreator
 	cropLister           CropLister
 	beerLabelService     BeerLabelIdentifier
+	beerLabelLister      BeerLabelRecognitionLister
 	limits               capturemodel.Limits
 	log                  *zap.Logger
 	metrics              *HTTPMetrics
@@ -64,6 +65,9 @@ func WithCropService(service CropCreator) HandlerOption {
 func WithBeerLabelService(service BeerLabelIdentifier) HandlerOption {
 	return func(cfg *handlerConfig) {
 		cfg.beerLabelService = service
+		if lister, ok := service.(BeerLabelRecognitionLister); ok {
+			cfg.beerLabelLister = lister
+		}
 	}
 }
 
@@ -106,6 +110,7 @@ func NewHandler(options ...HandlerOption) http.Handler {
 	mux.HandleFunc("POST /api/v1/detect", detectObjects(cfg.detectService, cfg.limits, cfg.log))
 	mux.HandleFunc("GET /api/v1/crops", listCrops(cfg.cropLister, cfg.log))
 	mux.HandleFunc("POST /api/v1/crops", createCrops(cfg.cropService, cfg.log))
+	mux.HandleFunc("GET /api/v1/beer-labels/recognitions", listBeerLabelRecognitions(cfg.beerLabelLister, cfg.log))
 	mux.HandleFunc("POST /api/v1/beer-labels/identify", identifyBeerLabel(cfg.beerLabelService, cfg.log))
 
 	return logAndMeasureRequests(mux, cfg.log, cfg.metrics)

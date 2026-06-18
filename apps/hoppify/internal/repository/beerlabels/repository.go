@@ -9,6 +9,7 @@ import (
 	"time"
 
 	beerlabelmodel "github.com/chistopat/hoppify/internal/models/beerlabel"
+	capturemodel "github.com/chistopat/hoppify/internal/models/capture"
 
 	"github.com/google/uuid"
 	"go.uber.org/zap"
@@ -139,6 +140,129 @@ func (repo *Repository) InsertBeerLabelRecognition(ctx context.Context, record *
 	)
 
 	return nil
+}
+
+func (repo *Repository) ListBeerLabelRecognitions(
+	ctx context.Context,
+	query capturemodel.ListQuery,
+) (beerlabelmodel.ListResult, error) {
+	started := time.Now()
+	repo.log.Debug(
+		"pg list beer label recognitions started",
+		zap.Int("limit", query.Limit),
+		zap.Int("offset", query.Offset),
+	)
+
+	rows, err := repo.db.QueryContext(
+		ctx,
+		`SELECT r.capture_uuid,
+			r.model,
+			r.prompt_version,
+			r.result,
+			r.created_at,
+			c.uuid,
+			c.parent_uuid,
+			c.type,
+			c.bucket,
+			c.object_key,
+			c.content_type,
+			c.size_bytes,
+			c.checksum_sha256,
+			c.metadata,
+			c.created_at
+		FROM beer_label_recognitions r
+		JOIN captures c ON c.uuid = r.capture_uuid
+		ORDER BY r.created_at DESC, r.capture_uuid DESC, r.prompt_version DESC
+		LIMIT $1 OFFSET $2`,
+		query.Limit+1,
+		query.Offset,
+	)
+	if err != nil {
+		repo.log.Error(
+			"pg list beer label recognitions failed",
+			zap.Error(err),
+			zap.Duration("duration", time.Since(started)),
+		)
+		return beerlabelmodel.ListResult{}, fmt.Errorf("query beer label recognitions: %w", err)
+	}
+	defer func() {
+		_ = rows.Close()
+	}()
+
+	records := make([]beerlabelmodel.ListRecord, 0, query.Limit+1)
+	for rows.Next() {
+		record, err := scanListedRecognition(rows)
+		if err != nil {
+			repo.log.Error(
+				"pg scan listed beer label recognition failed",
+				zap.Error(err),
+				zap.Duration("duration", time.Since(started)),
+			)
+			return beerlabelmodel.ListResult{}, err
+		}
+		records = append(records, record)
+	}
+	if err := rows.Err(); err != nil {
+		repo.log.Error(
+			"pg iterate beer label recognitions failed",
+			zap.Error(err),
+			zap.Duration("duration", time.Since(started)),
+		)
+		return beerlabelmodel.ListResult{}, fmt.Errorf("iterate beer label recognitions: %w", err)
+	}
+
+	hasMore := len(records) > query.Limit
+	if hasMore {
+		records = records[:query.Limit]
+	}
+
+	repo.log.Debug(
+		"pg list beer label recognitions completed",
+		zap.Int("record_count", len(records)),
+		zap.Bool("has_more", hasMore),
+		zap.Duration("duration", time.Since(started)),
+	)
+
+	return beerlabelmodel.ListResult{Records: records, HasMore: hasMore}, nil
+}
+
+type listedRecognitionScanner interface {
+	Scan(dest ...any) error
+}
+
+func scanListedRecognition(scanner listedRecognitionScanner) (beerlabelmodel.ListRecord, error) {
+	var recognition beerlabelmodel.Record
+	var recognitionResult []byte
+	var crop capturemodel.Record
+	var cropMetadata []byte
+	err := scanner.Scan(
+		&recognition.CaptureUUID,
+		&recognition.Model,
+		&recognition.PromptVersion,
+		&recognitionResult,
+		&recognition.CreatedAt,
+		&crop.UUID,
+		&crop.ParentUUID,
+		&crop.Type,
+		&crop.Bucket,
+		&crop.ObjectKey,
+		&crop.ContentType,
+		&crop.SizeBytes,
+		&crop.ChecksumSHA256,
+		&cropMetadata,
+		&crop.CreatedAt,
+	)
+	if err != nil {
+		return beerlabelmodel.ListRecord{}, fmt.Errorf("scan beer label recognition: %w", err)
+	}
+	if err := json.Unmarshal(recognitionResult, &recognition.Result); err != nil {
+		return beerlabelmodel.ListRecord{}, fmt.Errorf("decode beer label result: %w", err)
+	}
+	if err := json.Unmarshal(cropMetadata, &crop.Metadata); err != nil {
+		return beerlabelmodel.ListRecord{}, fmt.Errorf("decode recognition crop metadata: %w", err)
+	}
+
+	return beerlabelmodel.ListRecord{Crop: crop, Recognition: recognition}, nil
 }
 
 func loggerOrNop(log *zap.Logger) *zap.Logger {

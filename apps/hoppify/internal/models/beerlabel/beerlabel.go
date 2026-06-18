@@ -4,6 +4,8 @@ import (
 	"errors"
 	"time"
 
+	capturemodel "github.com/chistopat/hoppify/internal/models/capture"
+
 	"github.com/google/uuid"
 )
 
@@ -87,6 +89,11 @@ type Record struct {
 	CreatedAt     time.Time
 }
 
+type ListRecord struct {
+	Crop        capturemodel.Record
+	Recognition Record
+}
+
 type Response struct {
 	UUID          string    `json:"uuid,omitempty"`
 	URL           string    `json:"url,omitempty"`
@@ -97,6 +104,28 @@ type Response struct {
 	CreatedAt     time.Time `json:"createdAt"`
 }
 
+type ListResult struct {
+	Records []ListRecord
+	HasMore bool
+}
+
+type ListResponse struct {
+	Recognitions []ListItem `json:"recognitions"`
+	Limit        int        `json:"limit"`
+	Offset       int        `json:"offset"`
+	NextOffset   int        `json:"nextOffset,omitempty"`
+	HasMore      bool       `json:"hasMore"`
+}
+
+type ListItem struct {
+	UUID          string                `json:"uuid"`
+	Crop          capturemodel.ListItem `json:"crop"`
+	Model         string                `json:"model"`
+	PromptVersion string                `json:"promptVersion"`
+	Result        Result                `json:"result"`
+	CreatedAt     time.Time             `json:"createdAt"`
+}
+
 func ResponseFromRecord(record *Record, cached bool) Response {
 	return Response{
 		UUID:          record.CaptureUUID.String(),
@@ -105,5 +134,37 @@ func ResponseFromRecord(record *Record, cached bool) Response {
 		Cached:        cached,
 		Result:        record.Result,
 		CreatedAt:     record.CreatedAt,
+	}
+}
+
+func ListResponseFromRecords(records []ListRecord, query capturemodel.ListQuery, hasMore bool) ListResponse {
+	recognitions := make([]ListItem, 0, len(records))
+	for index := range records {
+		recognitions = append(recognitions, records[index].ListItem())
+	}
+
+	response := ListResponse{
+		Recognitions: recognitions,
+		Limit:        query.Limit,
+		Offset:       query.Offset,
+		HasMore:      hasMore,
+	}
+	if hasMore {
+		response.NextOffset = query.Offset + len(records)
+	}
+
+	return response
+}
+
+func (record *ListRecord) ListItem() ListItem {
+	recognition := record.Recognition
+
+	return ListItem{
+		UUID:          recognition.CaptureUUID.String(),
+		Crop:          record.Crop.ListItem(),
+		Model:         recognition.Model,
+		PromptVersion: recognition.PromptVersion,
+		Result:        recognition.Result,
+		CreatedAt:     recognition.CreatedAt,
 	}
 }

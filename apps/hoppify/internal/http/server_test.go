@@ -594,6 +594,76 @@ func TestIdentifyBeerLabelReturnsStructuredResponse(t *testing.T) {
 	}
 }
 
+func TestListBeerLabelRecognitionsReturnsPagedResults(t *testing.T) {
+	t.Parallel()
+
+	beerName := "Punk IPA"
+	brewery := "BrewDog"
+	createdAt := time.Date(2026, 6, 18, 13, 15, 0, 0, time.UTC)
+	service := &fakeBeerLabelService{listResponse: beerlabelmodel.ListResponse{
+		Recognitions: []beerlabelmodel.ListItem{{
+			UUID: "0190b67a-dc55-769d-9d2e-92d6d29af3c7",
+			Crop: capturemodel.ListItem{
+				UUID:      "0190b67a-dc55-769d-9d2e-92d6d29af3c7",
+				Type:      "image_crop",
+				URI:       "s3://hoppify/captures/crops/parent/0190b67a-dc55-769d-9d2e-92d6d29af3c7.jpg",
+				ImageURL:  "/api/v1/captures/0190b67a-dc55-769d-9d2e-92d6d29af3c7/image",
+				CreatedAt: createdAt,
+				SizeBytes: 456,
+				Width:     120,
+				Height:    320,
+			},
+			Model:         "gemini-2.5-flash-lite",
+			PromptVersion: "beer-label-v3-gemini-2.5-flash-lite",
+			Result: beerlabelmodel.Result{
+				Status:     beerlabelmodel.StatusIdentified,
+				Container:  beerlabelmodel.ContainerBottle,
+				BeerName:   &beerName,
+				Brewery:    &brewery,
+				Confidence: 0.91,
+				Evidence:   []string{"visible label"},
+			},
+			CreatedAt: createdAt,
+		}},
+		Limit:      2,
+		Offset:     4,
+		NextOffset: 5,
+		HasMore:    true,
+	}}
+	handler := NewHandler(WithBeerLabelService(service))
+	request := httptest.NewRequest(http.MethodGet, "/api/v1/beer-labels/recognitions?limit=2&offset=4", nil)
+	response := httptest.NewRecorder()
+
+	handler.ServeHTTP(response, request)
+
+	if response.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d with body %q", http.StatusOK, response.Code, response.Body.String())
+	}
+	if service.listQuery != (capturemodel.ListQuery{Limit: 2, Offset: 4}) {
+		t.Fatalf("unexpected list query: %#v", service.listQuery)
+	}
+
+	var body beerlabelmodel.ListResponse
+	if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if len(body.Recognitions) != 1 || body.Recognitions[0].Crop.ImageURL == "" || !body.HasMore {
+		t.Fatalf("unexpected beer label recognition list response: %#v", body)
+	}
+}
+
+func TestListBeerLabelRecognitionsRejectsInvalidQuery(t *testing.T) {
+	t.Parallel()
+
+	handler := NewHandler(WithBeerLabelService(&fakeBeerLabelService{}))
+	request := httptest.NewRequest(http.MethodGet, "/api/v1/beer-labels/recognitions?limit=0", nil)
+	response := httptest.NewRecorder()
+
+	handler.ServeHTTP(response, request)
+
+	assertAPIError(t, response, http.StatusBadRequest, string(beerlabelservice.InvalidRequest))
+}
+
 func TestIdentifyBeerLabelAcceptsS3URL(t *testing.T) {
 	t.Parallel()
 
@@ -774,9 +844,11 @@ type fakeCropService struct {
 }
 
 type fakeBeerLabelService struct {
-	response beerlabelmodel.Response
-	request  beerlabelmodel.Request
-	err      error
+	response     beerlabelmodel.Response
+	request      beerlabelmodel.Request
+	listResponse beerlabelmodel.ListResponse
+	listQuery    capturemodel.ListQuery
+	err          error
 }
 
 func (provider *fakeCaptureStatsProvider) CaptureStats(_ context.Context) (capturemodel.Stats, error) {
@@ -829,6 +901,18 @@ func (service *fakeBeerLabelService) Identify(
 	}
 
 	return service.response, nil
+}
+
+func (service *fakeBeerLabelService) ListRecognitions(
+	_ context.Context,
+	query capturemodel.ListQuery,
+) (beerlabelmodel.ListResponse, error) {
+	service.listQuery = query
+	if service.err != nil {
+		return beerlabelmodel.ListResponse{}, service.err
+	}
+
+	return service.listResponse, nil
 }
 
 func (service *fakeCaptureService) CreateCaptures(

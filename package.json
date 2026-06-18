@@ -1,0 +1,13 @@
+{
+  "name": "kailas",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Development tooling for the Kailas monorepo.",
+  "scripts": {
+    "playwright": "playwright",
+    "test:ui": "playwright test"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.61.0"
+  }
+}
