@@ -21,19 +21,17 @@ FROM debian:bookworm-slim AS artifacts
 
 ARG TARGETARCH
 ARG ONNXRUNTIME_VERSION
-ARG MODEL_URL=https://huggingface.co/chistopat/sku110k-yolo11-object-detector/resolve/main/weights/sku110k-yolo11-s640.onnx
 ARG MODEL_SHA256=e8bc019d4241cf9486c4b6aaf50d51b652b3a0d641fce1189fbba12136794cd1
+
+WORKDIR /out
+
+COPY models/sku110k-yolo11-s640.onnx ./models/sku110k-yolo11-s640.onnx
+
+RUN echo "${MODEL_SHA256}  models/sku110k-yolo11-s640.onnx" | sha256sum -c -
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends ca-certificates curl tar \
     && rm -rf /var/lib/apt/lists/*
-
-WORKDIR /out
-
-RUN mkdir -p models \
-    && curl --http1.1 -fsSL --retry 5 --retry-all-errors --retry-delay 2 \
-        -o models/sku110k-yolo11-s640.onnx "${MODEL_URL}" \
-    && echo "${MODEL_SHA256}  models/sku110k-yolo11-s640.onnx" | sha256sum -c -
 
 RUN case "${TARGETARCH}" in \
         amd64) ort_arch=x64 ;; \

@@ -20,7 +20,9 @@ etl/scripts/*
 bin/*
 !bin/.gitkeep
 
-apps/hoppify/models/
+apps/hoppify/models/*
+!apps/hoppify/models/
+!apps/hoppify/models/sku110k-yolo11-s640.onnx
 
 deployment/.terraform/
 deployment/*.tfstate
