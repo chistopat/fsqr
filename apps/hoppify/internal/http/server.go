@@ -22,14 +22,13 @@ type liveResponse struct {
 type HandlerOption func(*handlerConfig)
 
 type handlerConfig struct {
-	captureService      CaptureCreator
-	detectService       DetectorService
-	cropService         CropCreator
-	beerLabelService    BeerLabelIdentifier
-	beerLabelWebService BeerLabelIdentifier
-	limits              capturemodel.Limits
-	log                 *zap.Logger
-	metrics             *HTTPMetrics
+	captureService   CaptureCreator
+	detectService    DetectorService
+	cropService      CropCreator
+	beerLabelService BeerLabelIdentifier
+	limits           capturemodel.Limits
+	log              *zap.Logger
+	metrics          *HTTPMetrics
 }
 
 func WithCaptureService(service CaptureCreator) HandlerOption {
@@ -53,12 +52,6 @@ func WithCropService(service CropCreator) HandlerOption {
 func WithBeerLabelService(service BeerLabelIdentifier) HandlerOption {
 	return func(cfg *handlerConfig) {
 		cfg.beerLabelService = service
-	}
-}
-
-func WithBeerLabelWebService(service BeerLabelIdentifier) HandlerOption {
-	return func(cfg *handlerConfig) {
-		cfg.beerLabelWebService = service
 	}
 }
 
@@ -96,10 +89,9 @@ func NewHandler(options ...HandlerOption) http.Handler {
 	mux.HandleFunc("GET /swagger", serveSwaggerViewer)
 	mux.HandleFunc("GET /swagger/", serveSwaggerViewer)
 	mux.HandleFunc("POST /api/v1/captures", createCaptures(cfg.captureService, cfg.limits, cfg.log))
-	mux.HandleFunc("POST /api/v1/detect", detectObjects(cfg.detectService, cfg.log))
+	mux.HandleFunc("POST /api/v1/detect", detectObjects(cfg.detectService, cfg.limits, cfg.log))
 	mux.HandleFunc("POST /api/v1/crops", createCrops(cfg.cropService, cfg.log))
 	mux.HandleFunc("POST /api/v1/beer-labels/identify", identifyBeerLabel(cfg.beerLabelService, cfg.log))
-	mux.HandleFunc("POST /api/v2/beer-labels/identify", identifyBeerLabel(cfg.beerLabelWebService, cfg.log))
 
 	return logAndMeasureRequests(mux, cfg.log, cfg.metrics)
 }

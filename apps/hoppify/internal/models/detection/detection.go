@@ -1,7 +1,20 @@
 package detection
 
+import capturemodel "github.com/chistopat/hoppify/internal/models/capture"
+
 type Request struct {
-	UUID string `json:"uuid"`
+	UUID string                   `json:"uuid,omitempty"`
+	URL  string                   `json:"url,omitempty"`
+	URI  string                   `json:"uri,omitempty"`
+	File *capturemodel.UploadFile `json:"-"`
+}
+
+func (request Request) ImageURL() string {
+	if request.URL != "" {
+		return request.URL
+	}
+
+	return request.URI
 }
 
 type Response struct {
@@ -36,7 +49,8 @@ type Speed struct {
 }
 
 type Metadata struct {
-	UUID             string  `json:"uuid"`
+	UUID             string  `json:"uuid,omitempty"`
+	URL              string  `json:"url,omitempty"`
 	ImageCount       int     `json:"imageCount"`
 	FunctionTimeCall float64 `json:"functionTimeCall"`
 }

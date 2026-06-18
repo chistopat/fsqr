@@ -46,6 +46,9 @@ beer_label:
   openai_api_key: ""
   openai_base_url: "https://api.openai.com/v1"
   openai_timeout: 30s
+  gemini_api_key: ""
+  gemini_model: "gemini-2.5-flash-lite"
+  gemini_timeout: 30s
 
 observability:
   service_name: hoppify

@@ -215,8 +215,8 @@ func TestDetectObjectsReturnsUltralyticsStyleResponse(t *testing.T) {
 	if response.Code != http.StatusOK {
 		t.Fatalf("expected status %d, got %d with body %q", http.StatusOK, response.Code, response.Body.String())
 	}
-	if service.uuid != "018f7b8e-4d96-7b42-9f64-09e5d3a8e7c1" {
-		t.Fatalf("expected service uuid, got %q", service.uuid)
+	if service.request.UUID != "018f7b8e-4d96-7b42-9f64-09e5d3a8e7c1" {
+		t.Fatalf("expected service uuid, got %q", service.request.UUID)
 	}
 
 	var actual detectionmodel.Response
@@ -225,6 +225,67 @@ func TestDetectObjectsReturnsUltralyticsStyleResponse(t *testing.T) {
 	}
 	if actual.Images[0].Results[0].Box.X2 != expected.Images[0].Results[0].Box.X2 {
 		t.Fatalf("expected detection box in response, got %#v", actual.Images[0].Results[0].Box)
+	}
+}
+
+func TestDetectObjectsAcceptsS3URL(t *testing.T) {
+	t.Parallel()
+
+	service := &fakeDetectService{response: detectionmodel.Response{
+		Images: []detectionmodel.ImageResult{{Shape: [2]int{720, 1280}}},
+		Metadata: detectionmodel.Metadata{
+			URL:        "s3://hoppify/captures/image/018f7b8e-4d96-7b42-9f64-09e5d3a8e7c1.jpg",
+			ImageCount: 1,
+		},
+	}}
+	handler := NewHandler(WithDetectService(service))
+	request := httptest.NewRequest(
+		http.MethodPost,
+		"/api/v1/detect",
+		strings.NewReader(`{"url":"s3://hoppify/captures/image/018f7b8e-4d96-7b42-9f64-09e5d3a8e7c1.jpg"}`),
+	)
+	response := httptest.NewRecorder()
+
+	handler.ServeHTTP(response, request)
+
+	if response.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d with body %q", http.StatusOK, response.Code, response.Body.String())
+	}
+	if service.request.ImageURL() != "s3://hoppify/captures/image/018f7b8e-4d96-7b42-9f64-09e5d3a8e7c1.jpg" {
+		t.Fatalf("expected service url, got %q", service.request.ImageURL())
+	}
+}
+
+func TestDetectObjectsAcceptsMultipartFile(t *testing.T) {
+	t.Parallel()
+
+	service := &fakeDetectService{response: detectionmodel.Response{
+		Images: []detectionmodel.ImageResult{{Shape: [2]int{720, 1280}}},
+		Metadata: detectionmodel.Metadata{
+			ImageCount: 1,
+		},
+	}}
+	handler := NewHandler(
+		WithDetectService(service),
+		WithCaptureLimits(capturemodel.Limits{MaxFiles: 1, MaxFileBytes: 1024, MaxRequestBytes: 10 * 1024}),
+	)
+	request := newSingleFileMultipartRequest(t, "/api/v1/detect", "file", multipartTestFile{
+		filename:    "capture.jpg",
+		contentType: "image/jpeg",
+		body:        []byte{1, 2, 3},
+	})
+	response := httptest.NewRecorder()
+
+	handler.ServeHTTP(response, request)
+
+	if response.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d with body %q", http.StatusOK, response.Code, response.Body.String())
+	}
+	if service.request.File == nil {
+		t.Fatalf("expected service file input")
+	}
+	if service.request.File.ContentType != "image/jpeg" {
+		t.Fatalf("unexpected file content type: %q", service.request.File.ContentType)
 	}
 }
 
@@ -354,8 +415,8 @@ func TestIdentifyBeerLabelReturnsStructuredResponse(t *testing.T) {
 
 	expected := beerlabelmodel.Response{
 		UUID:          "0190b67a-dc55-769d-9d2e-92d6d29af3c7",
-		Model:         "gpt-5.4-mini",
-		PromptVersion: "beer-label-v1",
+		Model:         "gemini-2.5-flash-lite",
+		PromptVersion: "beer-label-v3-gemini-2.5-flash-lite",
 		Cached:        false,
 		Result: beerlabelmodel.Result{
 			Status:     beerlabelmodel.StatusIdentified,
@@ -379,8 +440,8 @@ func TestIdentifyBeerLabelReturnsStructuredResponse(t *testing.T) {
 	if response.Code != http.StatusOK {
 		t.Fatalf("expected status %d, got %d with body %q", http.StatusOK, response.Code, response.Body.String())
 	}
-	if service.uuid != "0190b67a-dc55-769d-9d2e-92d6d29af3c7" {
-		t.Fatalf("expected service uuid, got %q", service.uuid)
+	if service.request.UUID != "0190b67a-dc55-769d-9d2e-92d6d29af3c7" {
+		t.Fatalf("expected service uuid, got %q", service.request.UUID)
 	}
 
 	var actual beerlabelmodel.Response
@@ -392,39 +453,29 @@ func TestIdentifyBeerLabelReturnsStructuredResponse(t *testing.T) {
 	}
 }
 
-func TestIdentifyBeerLabelV2UsesWebService(t *testing.T) {
+func TestIdentifyBeerLabelAcceptsS3URL(t *testing.T) {
 	t.Parallel()
 
 	expected := beerlabelmodel.Response{
 		UUID:          "0190b67a-dc55-769d-9d2e-92d6d29af3c7",
-		Model:         "gpt-5.4-mini",
-		PromptVersion: "beer-label-v2-web",
+		URL:           "s3://hoppify/captures/crops/parent/0190b67a-dc55-769d-9d2e-92d6d29af3c7.jpg",
+		Model:         "gemini-2.5-flash-lite",
+		PromptVersion: "beer-label-v3-gemini-2.5-flash-lite",
 		Cached:        false,
 		Result: beerlabelmodel.Result{
 			Status:     beerlabelmodel.StatusIdentified,
-			Container:  beerlabelmodel.ContainerCan,
+			Container:  beerlabelmodel.ContainerBottle,
 			Confidence: 0.9,
-			Evidence:   []string{"web verified label"},
-			WebSearch: &beerlabelmodel.WebSearchResult{
-				Used:    true,
-				Queries: []string{"label untappd"},
-				Sources: []beerlabelmodel.WebSource{{URL: "https://untappd.com/search"}},
-			},
-			Untappd: &beerlabelmodel.UntappdRecommendation{
-				Status:     beerlabelmodel.UntappdSearchRecommended,
-				SearchURL:  stringPtr("https://untappd.com/search?q=label"),
-				Confidence: 0.7,
-			},
+			Evidence:   []string{"visible label"},
 		},
 		CreatedAt: time.Unix(1, 0).UTC(),
 	}
-	v1 := &fakeBeerLabelService{}
-	v2 := &fakeBeerLabelService{response: expected}
-	handler := NewHandler(WithBeerLabelService(v1), WithBeerLabelWebService(v2))
+	service := &fakeBeerLabelService{response: expected}
+	handler := NewHandler(WithBeerLabelService(service))
 	request := httptest.NewRequest(
 		http.MethodPost,
-		"/api/v2/beer-labels/identify",
-		strings.NewReader(`{"uuid":"0190b67a-dc55-769d-9d2e-92d6d29af3c7"}`),
+		"/api/v1/beer-labels/identify",
+		strings.NewReader(`{"url":"s3://hoppify/captures/crops/parent/0190b67a-dc55-769d-9d2e-92d6d29af3c7.jpg"}`),
 	)
 	response := httptest.NewRecorder()
 
@@ -433,19 +484,36 @@ func TestIdentifyBeerLabelV2UsesWebService(t *testing.T) {
 	if response.Code != http.StatusOK {
 		t.Fatalf("expected status %d, got %d with body %q", http.StatusOK, response.Code, response.Body.String())
 	}
-	if v1.uuid != "" {
-		t.Fatalf("expected v1 service not to be called, got %q", v1.uuid)
-	}
-	if v2.uuid != "0190b67a-dc55-769d-9d2e-92d6d29af3c7" {
-		t.Fatalf("expected v2 service uuid, got %q", v2.uuid)
+	if service.request.ImageURL() != "s3://hoppify/captures/crops/parent/0190b67a-dc55-769d-9d2e-92d6d29af3c7.jpg" {
+		t.Fatalf("expected service url, got %q", service.request.ImageURL())
 	}
 
 	var actual beerlabelmodel.Response
 	if err := json.Unmarshal(response.Body.Bytes(), &actual); err != nil {
 		t.Fatalf("decode response: %v", err)
 	}
-	if actual.PromptVersion != expected.PromptVersion || actual.Result.Untappd == nil {
-		t.Fatalf("unexpected beer label v2 response: %#v", actual)
+	if actual.URL != expected.URL || actual.PromptVersion != expected.PromptVersion {
+		t.Fatalf("unexpected beer label url response: %#v", actual)
+	}
+}
+
+func TestIdentifyBeerLabelVersionedRoutesAreGone(t *testing.T) {
+	t.Parallel()
+
+	handler := NewHandler(WithBeerLabelService(&fakeBeerLabelService{}))
+	for _, path := range []string{
+		"/api/v2/beer-labels/identify",
+		"/api/v3/beer-labels/identify",
+		"/api/v4/beer-labels/identify",
+	} {
+		request := httptest.NewRequest(http.MethodPost, path, strings.NewReader(`{"uuid":"id"}`))
+		response := httptest.NewRecorder()
+
+		handler.ServeHTTP(response, request)
+
+		if response.Code != http.StatusMethodNotAllowed {
+			t.Fatalf("expected %s to return 405, got %d", path, response.Code)
+		}
 	}
 }
 
@@ -548,7 +616,7 @@ type fakeCaptureStatsProvider struct {
 
 type fakeDetectService struct {
 	response detectionmodel.Response
-	uuid     string
+	request  detectionmodel.Request
 	err      error
 }
 
@@ -560,7 +628,7 @@ type fakeCropService struct {
 
 type fakeBeerLabelService struct {
 	response beerlabelmodel.Response
-	uuid     string
+	request  beerlabelmodel.Request
 	err      error
 }
 
@@ -570,9 +638,9 @@ func (provider *fakeCaptureStatsProvider) CaptureStats(_ context.Context) (captu
 
 func (service *fakeDetectService) Detect(
 	_ context.Context,
-	rawUUID string,
+	request detectionmodel.Request,
 ) (detectionmodel.Response, error) {
-	service.uuid = rawUUID
+	service.request = request
 	if service.err != nil {
 		return detectionmodel.Response{}, service.err
 	}
@@ -594,9 +662,9 @@ func (service *fakeCropService) CreateCrops(
 
 func (service *fakeBeerLabelService) Identify(
 	_ context.Context,
-	rawUUID string,
+	request beerlabelmodel.Request,
 ) (beerlabelmodel.Response, error) {
-	service.uuid = rawUUID
+	service.request = request
 	if service.err != nil {
 		return beerlabelmodel.Response{}, service.err
 	}
@@ -614,10 +682,6 @@ func (service *fakeCaptureService) CreateCaptures(
 	}
 
 	return service.captures, nil
-}
-
-func stringPtr(value string) *string {
-	return &value
 }
 
 type multipartTestFile struct {
@@ -652,6 +716,40 @@ func newMultipartRequest(t *testing.T, files []multipartTestFile) *http.Request 
 	}
 
 	request := httptest.NewRequest(http.MethodPost, "/api/v1/captures", &body)
+	request.Header.Set("Content-Type", writer.FormDataContentType())
+
+	return request
+}
+
+func newSingleFileMultipartRequest(
+	t *testing.T,
+	target string,
+	fieldName string,
+	file multipartTestFile,
+) *http.Request {
+	t.Helper()
+
+	var body bytes.Buffer
+	writer := multipart.NewWriter(&body)
+	header := make(textproto.MIMEHeader)
+	header.Set(
+		"Content-Disposition",
+		fmt.Sprintf(`form-data; name="%s"; filename="%s"`, fieldName, file.filename),
+	)
+	header.Set("Content-Type", file.contentType)
+
+	part, err := writer.CreatePart(header)
+	if err != nil {
+		t.Fatalf("create multipart part: %v", err)
+	}
+	if _, err := part.Write(file.body); err != nil {
+		t.Fatalf("write multipart part: %v", err)
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatalf("close multipart writer: %v", err)
+	}
+
+	request := httptest.NewRequest(http.MethodPost, target, &body)
 	request.Header.Set("Content-Type", writer.FormDataContentType())
 
 	return request

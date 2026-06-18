@@ -58,6 +58,12 @@ type preparedCapture struct {
 	body   []byte
 }
 
+type storedImage struct {
+	body      []byte
+	preserved bool
+	quality   int
+}
+
 func NewService(repository Repository, storage ObjectStorage, cfg Config) (*Service, error) {
 	if repository == nil {
 		return nil, fmt.Errorf("captures repository is required")
@@ -156,12 +162,12 @@ func (svc *Service) prepareCapture(file capturemodel.UploadFile) (preparedCaptur
 		return preparedCapture{}, newError(UnsupportedMediaType, "declared media type does not match image content", nil)
 	}
 
-	jpegBody, err := encodeJPEG(img, svc.jpegQuality)
+	stored, err := svc.prepareStoredImage(format, img, file.Data)
 	if err != nil {
 		return preparedCapture{}, newError(InvalidRequest, "file cannot be converted to jpeg", err)
 	}
 
-	checksum := sha256.Sum256(jpegBody)
+	checksum := sha256.Sum256(stored.body)
 	checksumHex := hex.EncodeToString(checksum[:])
 
 	id, err := svc.captureUUID(checksumHex)
@@ -169,7 +175,22 @@ func (svc *Service) prepareCapture(file capturemodel.UploadFile) (preparedCaptur
 		return preparedCapture{}, newError(InternalError, "internal server error", err)
 	}
 
-	return svc.newPreparedCapture(file, id, format, img.Bounds(), jpegBody, checksumHex), nil
+	return svc.newPreparedCapture(file, id, format, img.Bounds(), stored, checksumHex), nil
+}
+
+func (svc *Service) prepareStoredImage(format string, img image.Image, original []byte) (storedImage, error) {
+	if format == "jpeg" {
+		body := append([]byte(nil), original...)
+
+		return storedImage{body: body, preserved: true}, nil
+	}
+
+	body, err := encodeJPEG(img, svc.jpegQuality)
+	if err != nil {
+		return storedImage{}, err
+	}
+
+	return storedImage{body: body, quality: svc.jpegQuality}, nil
 }
 
 func (svc *Service) captureUUID(checksumHex string) (uuid.UUID, error) {
@@ -187,7 +208,7 @@ func (svc *Service) newPreparedCapture(
 	id uuid.UUID,
 	format string,
 	bounds image.Rectangle,
-	jpegBody []byte,
+	stored storedImage,
 	checksumHex string,
 ) preparedCapture {
 	objectKey := fmt.Sprintf("captures/image/%s.jpg", id.String())
@@ -198,15 +219,15 @@ func (svc *Service) newPreparedCapture(
 		Bucket:         svc.bucket,
 		ObjectKey:      objectKey,
 		ContentType:    capturemodel.ContentTypeJPEG,
-		SizeBytes:      int64(len(jpegBody)),
+		SizeBytes:      int64(len(stored.body)),
 		ChecksumSHA256: checksumHex,
 		Metadata: buildMetadata(file, format, dimensions{
 			width:  bounds.Dx(),
 			height: bounds.Dy(),
-		}, len(jpegBody), svc.jpegQuality),
+		}, len(stored.body), stored.quality, stored.preserved),
 	}
 
-	return preparedCapture{record: record, body: jpegBody}
+	return preparedCapture{record: record, body: stored.body}
 }
 
 func (svc *Service) uploadBatch(ctx context.Context, prepared []preparedCapture) ([]preparedCapture, error) {

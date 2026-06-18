@@ -12,7 +12,7 @@ import (
 )
 
 type BeerLabelIdentifier interface {
-	Identify(ctx context.Context, rawUUID string) (beerlabelmodel.Response, error)
+	Identify(ctx context.Context, request beerlabelmodel.Request) (beerlabelmodel.Response, error)
 }
 
 func identifyBeerLabel(service BeerLabelIdentifier, log *zap.Logger) http.HandlerFunc {
@@ -30,10 +30,19 @@ func identifyBeerLabel(service BeerLabelIdentifier, log *zap.Logger) http.Handle
 			return
 		}
 
-		loggerOrNop(log).Info("beer label identify request accepted", zap.String("uuid", request.UUID))
-		response, err := service.Identify(r.Context(), request.UUID)
+		loggerOrNop(log).Info(
+			"beer label identify request accepted",
+			zap.String("uuid", request.UUID),
+			zap.String("url", request.ImageURL()),
+		)
+		response, err := service.Identify(r.Context(), request)
 		if err != nil {
-			loggerOrNop(log).Error("beer label identify request failed", zap.String("uuid", request.UUID), zap.Error(err))
+			loggerOrNop(log).Error(
+				"beer label identify request failed",
+				zap.String("uuid", request.UUID),
+				zap.String("url", request.ImageURL()),
+				zap.Error(err),
+			)
 			writeBeerLabelError(w, err)
 			return
 		}

@@ -29,7 +29,17 @@ const (
 var ErrNotFound = errors.New("beer label recognition not found")
 
 type Request struct {
-	UUID string `json:"uuid"`
+	UUID string `json:"uuid,omitempty"`
+	URL  string `json:"url,omitempty"`
+	URI  string `json:"uri,omitempty"`
+}
+
+func (request Request) ImageURL() string {
+	if request.URL != "" {
+		return request.URL
+	}
+
+	return request.URI
 }
 
 type Result struct {
@@ -48,9 +58,10 @@ type Result struct {
 }
 
 type WebSearchResult struct {
-	Used    bool        `json:"used"`
-	Queries []string    `json:"queries"`
-	Sources []WebSource `json:"sources"`
+	Used                 bool        `json:"used"`
+	Queries              []string    `json:"queries"`
+	Sources              []WebSource `json:"sources"`
+	SearchEntryPointHTML *string     `json:"searchEntryPointHtml,omitempty"`
 }
 
 type WebSource struct {
@@ -77,7 +88,8 @@ type Record struct {
 }
 
 type Response struct {
-	UUID          string    `json:"uuid"`
+	UUID          string    `json:"uuid,omitempty"`
+	URL           string    `json:"url,omitempty"`
 	Model         string    `json:"model"`
 	PromptVersion string    `json:"promptVersion"`
 	Cached        bool      `json:"cached"`

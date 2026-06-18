@@ -59,6 +59,30 @@ func TestServiceCreatesCapturesAllOrNothing(t *testing.T) {
 	}
 }
 
+func TestServicePreservesUploadedJPEGBytes(t *testing.T) {
+	t.Parallel()
+
+	repository := &fakeRepository{}
+	storage := &fakeStorage{}
+	service := newTestService(t, repository, storage)
+	file := newJPEGUploadFile(t, "original.jpg")
+
+	captures, err := service.CreateCaptures(context.Background(), []capturemodel.UploadFile{file})
+	if err != nil {
+		t.Fatalf("create captures: %v", err)
+	}
+
+	if len(captures) != 1 || len(storage.puts) != 1 {
+		t.Fatalf("expected one capture and upload, got captures=%d uploads=%d", len(captures), len(storage.puts))
+	}
+	if !bytes.Equal(storage.puts[0].Body, file.Data) {
+		t.Fatalf("expected uploaded jpeg bytes to match the original file")
+	}
+	if repository.records[0].SizeBytes != int64(len(file.Data)) {
+		t.Fatalf("expected stored size %d, got %d", len(file.Data), repository.records[0].SizeBytes)
+	}
+}
+
 func TestServiceValidatesBatchBeforeUpload(t *testing.T) {
 	t.Parallel()
 

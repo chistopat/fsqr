@@ -26,6 +26,9 @@ paths:
   /api/v1/captures:
     post:
       summary: Upload image captures
+      description: >
+        Stores uploaded JPEG files byte-for-byte without recompressing them. PNG and WebP uploads are
+        decoded and stored as JPEG for compatibility with downstream detection and recognition.
       requestBody:
         required: true
         content:
@@ -87,8 +90,8 @@ paths:
     post:
       summary: Detect objects in a capture image
       description: >
-        Runs the configured object detector against a capture image.
-        The request references an image previously stored through `POST /api/v1/captures`.
+        Runs the configured object detector against exactly one image source: a stored capture UUID,
+        an S3 URI returned by captures/crops, or a direct multipart file.
       requestBody:
         required: true
         content:
@@ -100,6 +103,23 @@ paths:
                 summary: Detect by capture UUID
                 value:
                   uuid: 018f7b8e-4d96-7b42-9f64-09e5d3a8e7c1
+              url:
+                summary: Detect by S3 URL
+                value:
+                  url: s3://hoppify/captures/image/018f7b8e-4d96-7b42-9f64-09e5d3a8e7c1.jpg
+          multipart/form-data:
+            schema:
+              type: object
+              required:
+                - file
+              properties:
+                file:
+                  type: string
+                  format: binary
+              additionalProperties: false
+            encoding:
+              file:
+                contentType: image/jpeg, image/png, image/webp
       responses:
         "200":
           description: Objects were detected
@@ -209,10 +229,9 @@ paths:
     post:
       summary: Identify a beer label from a stored image
       description: >
-        Runs a vision-capable LLM against a stored capture or crop image and stores
-        the structured result in Postgres. Repeating the same UUID returns the cached
-        result and does not call the model again. The model is not given web search
-        or other external tools.
+        Runs Gemini 2.5 Flash-Lite v3 against exactly one image source: a stored capture/crop UUID or
+        an S3 URI returned by captures/crops. Repeating the same known UUID returns the cached result
+        and does not call the model again. The model is not given web search or other external tools.
       requestBody:
         required: true
         content:
@@ -224,6 +243,10 @@ paths:
                 summary: Identify by crop UUID
                 value:
                   uuid: 3b7eaa56-f7a6-57e1-bff6-552b103bb263
+              url:
+                summary: Identify by crop S3 URL
+                value:
+                  url: s3://hoppify/captures/crops/018f7b8e-4d96-7b42-9f64-09e5d3a8e7c1/3b7eaa56-f7a6-57e1-bff6-552b103bb263.jpg
       responses:
         "200":
           description: Beer label recognition result was returned from cache or model inference
@@ -232,107 +255,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/BeerLabelIdentifyResponse"
         "400":
-          description: Invalid JSON request or UUID
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ErrorResponse"
-        "404":
-          description: Capture UUID was not found
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ErrorResponse"
-        "415":
-          description: Unsupported image media type
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ErrorResponse"
-        "502":
-          description: Object storage failed
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ErrorResponse"
-        "503":
-          description: Beer label model is unavailable
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ErrorResponse"
-        "500":
-          description: LLM inference or internal error
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ErrorResponse"
-  /api/v2/beer-labels/identify:
-    post:
-      summary: Identify a beer label with web verification
-      description: >
-        Runs a vision-capable LLM against a stored capture or crop image, allows
-        OpenAI hosted web search for verification, and stores the structured result
-        in Postgres under the v2 prompt version. Repeating the same UUID returns the
-        cached v2 result and does not call the model again. The result may include
-        searched sources and an Untappd direct-match or search recommendation.
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/BeerLabelIdentifyRequest"
-            examples:
-              crop:
-                summary: Identify by crop UUID
-                value:
-                  uuid: 3b7eaa56-f7a6-57e1-bff6-552b103bb263
-      responses:
-        "200":
-          description: Beer label recognition result was returned from v2 cache or model inference
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/BeerLabelIdentifyResponse"
-              examples:
-                web:
-                  summary: Web verified result with Untappd recommendation
-                  value:
-                    uuid: 3b7eaa56-f7a6-57e1-bff6-552b103bb263
-                    model: gpt-5.4-mini
-                    promptVersion: beer-label-v2-web
-                    cached: false
-                    createdAt: "2026-06-17T12:00:00Z"
-                    result:
-                      status: identified
-                      container: can
-                      beerName: Punk IPA
-                      brewery: BrewDog
-                      style: IPA
-                      country: Scotland
-                      abv: 5.4
-                      confidence: 0.92
-                      evidence:
-                        - Visible label text reads Punk IPA
-                        - Web result confirms BrewDog Punk IPA
-                      notes: null
-                      webSearch:
-                        used: true
-                        queries:
-                          - BrewDog Punk IPA Untappd
-                        sources:
-                          - title: Punk IPA - BrewDog
-                            url: https://untappd.com/b/brewdog-punk-ipa/123
-                      untappd:
-                        status: direct_match
-                        url: https://untappd.com/b/brewdog-punk-ipa/123
-                        searchUrl: null
-                        name: Punk IPA
-                        brewery: BrewDog
-                        confidence: 0.88
-                        reason: Untappd result matches the visible beer and brewery.
-        "400":
-          description: Invalid JSON request or UUID
+          description: Invalid JSON request, UUID, or S3 URI
           content:
             application/json:
               schema:
@@ -371,19 +294,26 @@ components:
   schemas:
     BeerLabelIdentifyRequest:
       type: object
-      required:
-        - uuid
+      description: Exactly one of `uuid`, `url`, or `uri` is required.
       properties:
         uuid:
           type: string
           format: uuid
           description: Capture or crop UUID returned by `POST /api/v1/captures` or `/api/v1/crops`.
           example: 3b7eaa56-f7a6-57e1-bff6-552b103bb263
+        url:
+          type: string
+          description: S3 URI returned by `POST /api/v1/captures` or `/api/v1/crops`.
+          example: s3://hoppify/captures/crops/018f7b8e-4d96-7b42-9f64-09e5d3a8e7c1/3b7eaa56-f7a6-57e1-bff6-552b103bb263.jpg
+        uri:
+          type: string
+          deprecated: true
+          description: Alias for `url`.
+          example: s3://hoppify/captures/crops/018f7b8e-4d96-7b42-9f64-09e5d3a8e7c1/3b7eaa56-f7a6-57e1-bff6-552b103bb263.jpg
       additionalProperties: false
     BeerLabelIdentifyResponse:
       type: object
       required:
-        - uuid
         - model
         - promptVersion
         - cached
@@ -393,13 +323,18 @@ components:
         uuid:
           type: string
           format: uuid
+          description: Present when the source image maps to a known capture or crop UUID.
           example: 3b7eaa56-f7a6-57e1-bff6-552b103bb263
+        url:
+          type: string
+          description: Present when the request used an S3 URI source.
+          example: s3://hoppify/captures/crops/018f7b8e-4d96-7b42-9f64-09e5d3a8e7c1/3b7eaa56-f7a6-57e1-bff6-552b103bb263.jpg
         model:
           type: string
-          example: gpt-5.4-mini
+          example: gemini-2.5-flash-lite
         promptVersion:
           type: string
-          example: beer-label-v1
+          example: beer-label-v3-gemini-2.5-flash-lite
         cached:
           type: boolean
           description: True when the result was read from Postgres without calling the model.
@@ -484,11 +419,11 @@ components:
         webSearch:
           allOf:
             - $ref: "#/components/schemas/BeerLabelWebSearchResult"
-          description: Present for v2 web-search recognitions.
+          description: Reserved for historical web-search recognitions.
         untappd:
           allOf:
             - $ref: "#/components/schemas/BeerLabelUntappdRecommendation"
-          description: Present for v2 web-search recognitions.
+          description: Reserved for historical web-search recognitions.
       additionalProperties: false
     BeerLabelWebSearchResult:
       type: object
@@ -510,6 +445,10 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/BeerLabelWebSource"
+        searchEntryPointHtml:
+          type: string
+          nullable: true
+          description: Google Search suggestions HTML returned by Gemini grounding when available.
       additionalProperties: false
     BeerLabelWebSource:
       type: object
@@ -577,14 +516,22 @@ components:
       additionalProperties: false
     DetectRequest:
       type: object
-      required:
-        - uuid
+      description: Exactly one of `uuid`, `url`, or `uri` is required for JSON requests.
       properties:
         uuid:
           type: string
           format: uuid
           description: Capture UUID returned by `POST /api/v1/captures`.
           example: 018f7b8e-4d96-7b42-9f64-09e5d3a8e7c1
+        url:
+          type: string
+          description: S3 URI returned by `POST /api/v1/captures` or `/api/v1/crops`.
+          example: s3://hoppify/captures/image/018f7b8e-4d96-7b42-9f64-09e5d3a8e7c1.jpg
+        uri:
+          type: string
+          deprecated: true
+          description: Alias for `url`.
+          example: s3://hoppify/captures/image/018f7b8e-4d96-7b42-9f64-09e5d3a8e7c1.jpg
       additionalProperties: false
     CropRequest:
       type: object
@@ -652,6 +599,7 @@ components:
         - uuid
         - type
         - uri
+        - url
       properties:
         uuid:
           type: string
@@ -661,6 +609,9 @@ components:
           type: string
           example: image_crop
         uri:
+          type: string
+          example: s3://hoppify/captures/crops/018f7b8e-4d96-7b42-9f64-09e5d3a8e7c1/3b7eaa56-f7a6-57e1-bff6-552b103bb263.jpg
+        url:
           type: string
           example: s3://hoppify/captures/crops/018f7b8e-4d96-7b42-9f64-09e5d3a8e7c1/3b7eaa56-f7a6-57e1-bff6-552b103bb263.jpg
     DetectResponse:
@@ -730,15 +681,18 @@ components:
     DetectMetadata:
       type: object
       required:
-        - uuid
         - imageCount
         - functionTimeCall
       properties:
         uuid:
           type: string
           format: uuid
-          description: Capture UUID used as the inference source.
+          description: Present when the source image maps to a capture or crop UUID.
           example: 018f7b8e-4d96-7b42-9f64-09e5d3a8e7c1
+        url:
+          type: string
+          description: S3 URI used as the inference source when available.
+          example: s3://hoppify/captures/image/018f7b8e-4d96-7b42-9f64-09e5d3a8e7c1.jpg
         imageCount:
           type: integer
           minimum: 1
@@ -817,6 +771,7 @@ components:
         - uuid
         - type
         - uri
+        - url
       properties:
         uuid:
           type: string
@@ -826,6 +781,9 @@ components:
           type: string
           example: image
         uri:
+          type: string
+          example: s3://hoppify/captures/image/018f7b8e-4d96-7b42-9f64-09e5d3a8e7c1.jpg
+        url:
           type: string
           example: s3://hoppify/captures/image/018f7b8e-4d96-7b42-9f64-09e5d3a8e7c1.jpg
     ErrorResponse:

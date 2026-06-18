@@ -21,12 +21,16 @@ type CropResponse struct {
 	UUID string `json:"uuid"`
 	Type string `json:"type"`
 	URI  string `json:"uri"`
+	URL  string `json:"url,omitempty"`
 }
 
 func ResponseFromCapture(record *capturemodel.Record) CropResponse {
+	uri := capturemodel.URI(record.Bucket, record.ObjectKey)
+
 	return CropResponse{
 		UUID: record.UUID.String(),
 		Type: record.Type,
-		URI:  capturemodel.URI(record.Bucket, record.ObjectKey),
+		URI:  uri,
+		URL:  uri,
 	}
 }

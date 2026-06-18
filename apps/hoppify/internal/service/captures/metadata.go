@@ -19,9 +19,20 @@ func buildMetadata(
 	file capturemodel.UploadFile,
 	format string,
 	dims dimensions,
-	normalizedSize,
+	storedSize int,
 	quality int,
+	preserved bool,
 ) map[string]any {
+	normalized := map[string]any{
+		"content_type":       capturemodel.ContentTypeJPEG,
+		"format":             "jpeg",
+		"preserved_original": preserved,
+		"size_bytes":         storedSize,
+	}
+	if !preserved {
+		normalized["quality"] = quality
+	}
+
 	metadata := map[string]any{
 		"dimensions": map[string]any{
 			"width":  dims.width,
@@ -33,12 +44,7 @@ func buildMetadata(
 			"format":       format,
 			"size_bytes":   file.SizeBytes,
 		},
-		"normalized": map[string]any{
-			"content_type": capturemodel.ContentTypeJPEG,
-			"format":       "jpeg",
-			"quality":      quality,
-			"size_bytes":   normalizedSize,
-		},
+		"normalized": normalized,
 	}
 
 	addEXIFMetadata(metadata, file.Data)

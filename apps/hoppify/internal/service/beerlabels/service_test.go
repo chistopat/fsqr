@@ -23,7 +23,7 @@ func TestServiceReturnsCachedRecognitionWithoutCallingModel(t *testing.T) {
 	recognizer := &fakeRecognizer{}
 	service := newTestService(t, &fakeCaptureRepository{}, recognitions, storage, recognizer)
 
-	response, err := service.Identify(context.Background(), testCaptureUUID)
+	response, err := service.Identify(context.Background(), beerlabelmodel.Request{UUID: testCaptureUUID})
 	if err != nil {
 		t.Fatalf("identify beer label: %v", err)
 	}
@@ -44,29 +44,31 @@ func TestServiceCachesRecognitionByPromptVersion(t *testing.T) {
 
 	captureID := uuid.MustParse(testCaptureUUID)
 	captures := &fakeCaptureRepository{record: newCaptureRecord(captureID)}
-	recognitions := newFakeRecognitionRepository(newRecognitionRecord(captureID))
+	oldRecord := newRecognitionRecord(captureID)
+	oldRecord.PromptVersion = "beer-label-v1"
+	recognitions := newFakeRecognitionRepository(oldRecord)
 	storage := &fakeStorage{object: capturemodel.Object{Body: []byte("jpeg")}}
 	recognizer := &fakeRecognizer{
-		promptVersion: "beer-label-v2-web",
+		promptVersion: "beer-label-v3-gemini-2.5-flash-lite",
 		result: beerlabelmodel.Result{
 			Status:     beerlabelmodel.StatusIdentified,
 			Container:  beerlabelmodel.ContainerCan,
 			Confidence: 0.9,
-			Evidence:   []string{"web verified"},
+			Evidence:   []string{"gemini label"},
 		},
 	}
 	service := newTestService(t, captures, recognitions, storage, recognizer)
 
-	response, err := service.Identify(context.Background(), testCaptureUUID)
+	response, err := service.Identify(context.Background(), beerlabelmodel.Request{UUID: testCaptureUUID})
 	if err != nil {
 		t.Fatalf("identify beer label: %v", err)
 	}
 
 	if response.Cached {
-		t.Fatalf("expected v2 response to bypass v1 cache")
+		t.Fatalf("expected v3 response to bypass v1 cache")
 	}
-	if response.PromptVersion != "beer-label-v2-web" {
-		t.Fatalf("expected v2 prompt version, got %q", response.PromptVersion)
+	if response.PromptVersion != "beer-label-v3-gemini-2.5-flash-lite" {
+		t.Fatalf("expected v3 prompt version, got %q", response.PromptVersion)
 	}
 	if recognizer.calls != 1 {
 		t.Fatalf("expected recognizer to be called, got %d calls", recognizer.calls)
@@ -100,11 +102,11 @@ func TestServiceStoresRecognitionAndReusesIt(t *testing.T) {
 	}}
 	service := newTestService(t, captures, recognitions, storage, recognizer)
 
-	first, err := service.Identify(context.Background(), testCaptureUUID)
+	first, err := service.Identify(context.Background(), beerlabelmodel.Request{UUID: testCaptureUUID})
 	if err != nil {
 		t.Fatalf("identify beer label: %v", err)
 	}
-	second, err := service.Identify(context.Background(), testCaptureUUID)
+	second, err := service.Identify(context.Background(), beerlabelmodel.Request{UUID: testCaptureUUID})
 	if err != nil {
 		t.Fatalf("identify beer label again: %v", err)
 	}
@@ -138,9 +140,82 @@ func TestServiceMapsUnavailableRecognizer(t *testing.T) {
 		&fakeRecognizer{err: ErrModelUnavailable},
 	)
 
-	_, err := service.Identify(context.Background(), testCaptureUUID)
+	_, err := service.Identify(context.Background(), beerlabelmodel.Request{UUID: testCaptureUUID})
 
 	assertBeerLabelError(t, err, ModelUnavailable)
+}
+
+func TestServiceReturnsCachedRecognitionForS3URL(t *testing.T) {
+	t.Parallel()
+
+	captureID := uuid.MustParse(testCaptureUUID)
+	captures := &fakeCaptureRepository{record: newCaptureRecord(captureID)}
+	recognitions := newFakeRecognitionRepository(newRecognitionRecord(captureID))
+	storage := &fakeStorage{}
+	recognizer := &fakeRecognizer{}
+	service := newTestService(t, captures, recognitions, storage, recognizer)
+
+	response, err := service.Identify(context.Background(), beerlabelmodel.Request{
+		URL: "s3://hoppify/captures/crops/parent/" + testCaptureUUID + ".jpg",
+	})
+	if err != nil {
+		t.Fatalf("identify beer label: %v", err)
+	}
+
+	if !response.Cached {
+		t.Fatalf("expected cached response")
+	}
+	if response.URL != "s3://hoppify/captures/crops/parent/"+testCaptureUUID+".jpg" {
+		t.Fatalf("expected response url, got %q", response.URL)
+	}
+	if storage.gets != 0 {
+		t.Fatalf("expected storage not to be read, got %d reads", storage.gets)
+	}
+	if recognizer.calls != 0 {
+		t.Fatalf("expected recognizer not to be called, got %d calls", recognizer.calls)
+	}
+}
+
+func TestServiceIdentifiesS3URLWithoutCaptureCache(t *testing.T) {
+	t.Parallel()
+
+	captureID := uuid.MustParse(testCaptureUUID)
+	captures := &fakeCaptureRepository{record: capturemodel.Record{}}
+	recognitions := newFakeRecognitionRepository()
+	storage := &fakeStorage{object: capturemodel.Object{
+		ContentType: capturemodel.ContentTypeJPEG,
+		Body:        []byte("jpeg"),
+	}}
+	recognizer := &fakeRecognizer{result: beerlabelmodel.Result{
+		Status:     beerlabelmodel.StatusIdentified,
+		Container:  beerlabelmodel.ContainerBottle,
+		Confidence: 0.82,
+		Evidence:   []string{"label text appears readable"},
+	}}
+	service := newTestService(t, captures, recognitions, storage, recognizer)
+
+	response, err := service.Identify(context.Background(), beerlabelmodel.Request{
+		URL: "s3://external/images/" + captureID.String() + ".jpg",
+	})
+	if err != nil {
+		t.Fatalf("identify beer label: %v", err)
+	}
+
+	if response.Cached {
+		t.Fatalf("expected uncached response")
+	}
+	if response.UUID != captureID.String() {
+		t.Fatalf("expected uuid from s3 key, got %q", response.UUID)
+	}
+	if response.URL != "s3://external/images/"+captureID.String()+".jpg" {
+		t.Fatalf("expected response url, got %q", response.URL)
+	}
+	if recognitions.inserted != 0 {
+		t.Fatalf("expected recognition not to be cached, got %d inserts", recognitions.inserted)
+	}
+	if storage.gets != 1 || storage.bucket != "external" || storage.objectKey != "images/"+captureID.String()+".jpg" {
+		t.Fatalf("expected one s3 read, got %d reads for %s/%s", storage.gets, storage.bucket, storage.objectKey)
+	}
 }
 
 func newTestService(
@@ -176,8 +251,8 @@ func newCaptureRecord(captureID uuid.UUID) capturemodel.Record {
 func newRecognitionRecord(captureID uuid.UUID) beerlabelmodel.Record {
 	return beerlabelmodel.Record{
 		CaptureUUID:   captureID,
-		Model:         "gpt-5.4-mini",
-		PromptVersion: "beer-label-v1",
+		Model:         "gemini-2.5-flash-lite",
+		PromptVersion: "beer-label-v3-gemini-2.5-flash-lite",
 		Result: beerlabelmodel.Result{
 			Status:     beerlabelmodel.StatusUnreadable,
 			Container:  beerlabelmodel.ContainerUnknown,
@@ -265,18 +340,22 @@ func recognitionKey(captureID uuid.UUID, promptVersion string) string {
 }
 
 type fakeStorage struct {
-	object capturemodel.Object
-	gets   int
-	err    error
+	object    capturemodel.Object
+	gets      int
+	bucket    string
+	objectKey string
+	err       error
 }
 
 func (storage *fakeStorage) GetObject(
 	_ context.Context,
-	_ string,
-	_ string,
+	bucket string,
+	objectKey string,
 	_ int64,
 ) (capturemodel.Object, error) {
 	storage.gets++
+	storage.bucket = bucket
+	storage.objectKey = objectKey
 	if storage.err != nil {
 		return capturemodel.Object{}, storage.err
 	}
@@ -301,7 +380,7 @@ func (recognizer *fakeRecognizer) IdentifyBeerLabel(_ context.Context, _ []byte)
 }
 
 func (recognizer *fakeRecognizer) Model() string {
-	return "gpt-5.4-mini"
+	return "gemini-2.5-flash-lite"
 }
 
 func (recognizer *fakeRecognizer) PromptVersion() string {
@@ -309,5 +388,5 @@ func (recognizer *fakeRecognizer) PromptVersion() string {
 		return recognizer.promptVersion
 	}
 
-	return "beer-label-v1"
+	return "beer-label-v3-gemini-2.5-flash-lite"
 }

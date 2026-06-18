@@ -16,7 +16,7 @@ import (
 	onnxdetector "github.com/chistopat/hoppify/internal/detector/onnx"
 	httpapi "github.com/chistopat/hoppify/internal/http"
 	"github.com/chistopat/hoppify/internal/logger"
-	openairecognizer "github.com/chistopat/hoppify/internal/recognizer/openai"
+	geminirecognizer "github.com/chistopat/hoppify/internal/recognizer/gemini"
 	beerlabelrepo "github.com/chistopat/hoppify/internal/repository/beerlabels"
 	capturerepo "github.com/chistopat/hoppify/internal/repository/captures"
 	beerlabelservice "github.com/chistopat/hoppify/internal/service/beerlabels"
@@ -106,27 +106,16 @@ func run() error {
 		return fmt.Errorf("init crops service: %w", err)
 	}
 
-	beerLabelRecognizer := newBeerLabelRecognizer(cfg.BeerLabel, appLogger.Named("beer_labels.openai"), false)
-	beerLabelService, err := beerlabelservice.NewService(
+	beerLabelService, err := newBeerLabelService(
+		&cfg.BeerLabel,
 		repository,
 		beerLabelRepository,
 		objectStorage,
-		beerLabelRecognizer,
-		beerlabelservice.Config{MaxObjectBytes: cfg.Upload.Limits().MaxFileBytes},
+		appLogger,
+		cfg.Upload.Limits().MaxFileBytes,
 	)
 	if err != nil {
-		return fmt.Errorf("init beer labels service: %w", err)
-	}
-	beerLabelWebRecognizer := newBeerLabelRecognizer(cfg.BeerLabel, appLogger.Named("beer_labels.openai_web"), true)
-	beerLabelWebService, err := beerlabelservice.NewService(
-		repository,
-		beerLabelRepository,
-		objectStorage,
-		beerLabelWebRecognizer,
-		beerlabelservice.Config{MaxObjectBytes: cfg.Upload.Limits().MaxFileBytes},
-	)
-	if err != nil {
-		return fmt.Errorf("init beer labels web service: %w", err)
+		return err
 	}
 
 	metrics := httpapi.NewMetrics(repository, appLogger.Named("metrics"))
@@ -137,7 +126,6 @@ func run() error {
 			httpapi.WithDetectService(detectService),
 			httpapi.WithCropService(cropService),
 			httpapi.WithBeerLabelService(beerLabelService),
-			httpapi.WithBeerLabelWebService(beerLabelWebService),
 			httpapi.WithCaptureLimits(cfg.Upload.Limits()),
 			httpapi.WithLogger(appLogger.Named("http")),
 			httpapi.WithHTTPMetrics(metrics.HTTP),
@@ -153,25 +141,40 @@ func run() error {
 	return serveUntilStopped(appLogger, server, metricsServer, &cfg)
 }
 
-func newBeerLabelRecognizer(
-	cfg config.BeerLabelConfig,
+func newBeerLabelService(
+	cfg *config.BeerLabelConfig,
+	captures beerlabelservice.CaptureRepository,
+	recognitions beerlabelservice.RecognitionRepository,
+	objectStorage beerlabelservice.ObjectStorage,
+	appLogger *zap.Logger,
+	maxObjectBytes int64,
+) (*beerlabelservice.Service, error) {
+	beerLabelService, err := beerlabelservice.NewService(
+		captures,
+		recognitions,
+		objectStorage,
+		newBeerLabelGeminiRecognizer(cfg, appLogger.Named("beer_labels.gemini")),
+		beerlabelservice.Config{MaxObjectBytes: maxObjectBytes},
+	)
+	if err != nil {
+		return nil, fmt.Errorf("init beer labels service: %w", err)
+	}
+
+	return beerLabelService, nil
+}
+
+func newBeerLabelGeminiRecognizer(
+	cfg *config.BeerLabelConfig,
 	recognizerLog *zap.Logger,
-	webSearch bool,
 ) beerlabelservice.Recognizer {
-	recognizer, err := openairecognizer.NewClient(openairecognizer.Config{
-		APIKey:    cfg.OpenAIAPIKey,
-		BaseURL:   cfg.OpenAIBaseURL,
-		Model:     cfg.Model,
-		Timeout:   cfg.OpenAITimeout,
-		WebSearch: webSearch,
+	recognizer, err := geminirecognizer.NewClient(geminirecognizer.Config{
+		APIKey:  cfg.GeminiAPIKey,
+		Model:   cfg.GeminiModel,
+		Timeout: cfg.GeminiTimeout,
 	})
 	if err != nil {
-		promptVersion := openairecognizer.PromptVersionV1
-		if webSearch {
-			promptVersion = openairecognizer.PromptVersionV2
-		}
-		recognizerLog.Warn("openai beer label recognizer unavailable", zap.Error(err))
-		return beerlabelservice.NewUnavailableRecognizer(cfg.Model, promptVersion, err)
+		recognizerLog.Warn("gemini beer label recognizer unavailable", zap.Error(err))
+		return beerlabelservice.NewUnavailableRecognizer(cfg.GeminiModel, geminirecognizer.PromptVersionV3, err)
 	}
 
 	return recognizer

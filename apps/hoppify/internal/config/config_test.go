@@ -11,6 +11,9 @@ func TestLoadLocalConfig(t *testing.T) {
 	t.Setenv("HOPPIFY_DATABASE_DSN", "postgres://hoppify:hoppify@127.0.0.1:5432/hoppify_test?sslmode=disable")
 	t.Setenv("HOPPIFY_S3_BUCKET", "test-bucket")
 	t.Setenv("HOPPIFY_DETECTOR_CONFIDENCE_THRESHOLD", "0.4")
+	t.Setenv("HOPPIFY_BEER_LABEL_GEMINI_API_KEY", "test-gemini-key")
+	t.Setenv("HOPPIFY_BEER_LABEL_GEMINI_MODEL", "gemini-test")
+	t.Setenv("HOPPIFY_BEER_LABEL_GEMINI_TIMEOUT", "45s")
 
 	cfg, err := Load()
 	if err != nil {
@@ -95,6 +98,15 @@ func assertBeerLabelConfig(t *testing.T, cfg Config) {
 	}
 	if cfg.BeerLabel.OpenAITimeout != 30*time.Second {
 		t.Fatalf("expected beer label openai timeout 30s, got %s", cfg.BeerLabel.OpenAITimeout)
+	}
+	if cfg.BeerLabel.GeminiAPIKey != "test-gemini-key" {
+		t.Fatalf("expected beer label gemini api key from env")
+	}
+	if cfg.BeerLabel.GeminiModel != "gemini-test" {
+		t.Fatalf("expected beer label gemini model from env, got %q", cfg.BeerLabel.GeminiModel)
+	}
+	if cfg.BeerLabel.GeminiTimeout != 45*time.Second {
+		t.Fatalf("expected beer label gemini timeout 45s, got %s", cfg.BeerLabel.GeminiTimeout)
 	}
 }
 

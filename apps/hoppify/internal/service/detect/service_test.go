@@ -39,7 +39,7 @@ func TestDetectReturnsUltralyticsStyleResponse(t *testing.T) {
 	}}
 	service := newTestService(t, repository, storage, detector)
 
-	response, err := service.Detect(context.Background(), captureID.String())
+	response, err := service.Detect(context.Background(), detectionmodel.Request{UUID: captureID.String()})
 	if err != nil {
 		t.Fatalf("detect: %v", err)
 	}
@@ -78,7 +78,7 @@ func TestDetectRejectsInvalidUUID(t *testing.T) {
 
 	service := newTestService(t, &fakeRepository{}, &fakeStorage{}, &fakeDetector{})
 
-	_, err := service.Detect(context.Background(), "bad")
+	_, err := service.Detect(context.Background(), detectionmodel.Request{UUID: "bad"})
 
 	assertDetectError(t, err, InvalidRequest)
 }
@@ -88,7 +88,7 @@ func TestDetectReturnsNotFoundForMissingCapture(t *testing.T) {
 
 	service := newTestService(t, &fakeRepository{err: capturemodel.ErrNotFound}, &fakeStorage{}, &fakeDetector{})
 
-	_, err := service.Detect(context.Background(), testCaptureUUID)
+	_, err := service.Detect(context.Background(), detectionmodel.Request{UUID: testCaptureUUID})
 
 	assertDetectError(t, err, NotFound)
 }
@@ -104,7 +104,7 @@ func TestDetectReturnsStorageErrorWhenObjectReadFails(t *testing.T) {
 		&fakeDetector{},
 	)
 
-	_, err := service.Detect(context.Background(), testCaptureUUID)
+	_, err := service.Detect(context.Background(), detectionmodel.Request{UUID: testCaptureUUID})
 
 	assertDetectError(t, err, StorageError)
 }
@@ -120,9 +120,70 @@ func TestDetectReturnsInferenceErrorWhenDetectorFails(t *testing.T) {
 		&fakeDetector{err: errors.New("onnx failed")},
 	)
 
-	_, err := service.Detect(context.Background(), testCaptureUUID)
+	_, err := service.Detect(context.Background(), detectionmodel.Request{UUID: testCaptureUUID})
 
 	assertDetectError(t, err, InferenceError)
+}
+
+func TestDetectReadsS3URLSource(t *testing.T) {
+	t.Parallel()
+
+	imageBody := readFixture(t)
+	storage := &fakeStorage{object: capturemodel.Object{
+		ContentType: capturemodel.ContentTypeJPEG,
+		Body:        imageBody,
+	}}
+	detector := &fakeDetector{result: detectionmodel.ImageResult{}}
+	service := newTestService(t, &fakeRepository{}, storage, detector)
+
+	response, err := service.Detect(context.Background(), detectionmodel.Request{
+		URL: "s3://hoppify/captures/image/" + testCaptureUUID + ".jpg",
+	})
+	if err != nil {
+		t.Fatalf("detect: %v", err)
+	}
+
+	if storage.bucket != "hoppify" || storage.objectKey != "captures/image/"+testCaptureUUID+".jpg" {
+		t.Fatalf("expected s3 object lookup, got %s/%s", storage.bucket, storage.objectKey)
+	}
+	if response.Metadata.UUID != testCaptureUUID {
+		t.Fatalf("expected metadata uuid from s3 key, got %q", response.Metadata.UUID)
+	}
+	if response.Metadata.URL != "s3://hoppify/captures/image/"+testCaptureUUID+".jpg" {
+		t.Fatalf("expected metadata url, got %q", response.Metadata.URL)
+	}
+	if !detector.called {
+		t.Fatalf("expected detector call")
+	}
+}
+
+func TestDetectReadsFileSource(t *testing.T) {
+	t.Parallel()
+
+	file := capturemodel.UploadFile{
+		Filename:    "shelf.jpg",
+		ContentType: capturemodel.ContentTypeJPEG,
+		SizeBytes:   int64(len(readFixture(t))),
+		Data:        readFixture(t),
+	}
+	storage := &fakeStorage{}
+	detector := &fakeDetector{result: detectionmodel.ImageResult{}}
+	service := newTestService(t, &fakeRepository{}, storage, detector)
+
+	response, err := service.Detect(context.Background(), detectionmodel.Request{File: &file})
+	if err != nil {
+		t.Fatalf("detect: %v", err)
+	}
+
+	if storage.gets != 0 {
+		t.Fatalf("expected storage not to be read, got %d reads", storage.gets)
+	}
+	if response.Metadata.UUID != "" {
+		t.Fatalf("expected empty metadata uuid for direct file input, got %q", response.Metadata.UUID)
+	}
+	if !detector.called {
+		t.Fatalf("expected detector call")
+	}
 }
 
 func newTestService(
@@ -193,17 +254,23 @@ func (repo *fakeRepository) FindCaptureByUUID(_ context.Context, id uuid.UUID) (
 }
 
 type fakeStorage struct {
-	object   capturemodel.Object
-	maxBytes int64
-	err      error
+	object    capturemodel.Object
+	maxBytes  int64
+	gets      int
+	bucket    string
+	objectKey string
+	err       error
 }
 
 func (storage *fakeStorage) GetObject(
 	_ context.Context,
-	_ string,
-	_ string,
+	bucket string,
+	objectKey string,
 	maxBytes int64,
 ) (capturemodel.Object, error) {
+	storage.gets++
+	storage.bucket = bucket
+	storage.objectKey = objectKey
 	storage.maxBytes = maxBytes
 	if storage.err != nil {
 		return capturemodel.Object{}, storage.err

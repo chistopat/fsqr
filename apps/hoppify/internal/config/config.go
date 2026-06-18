@@ -31,6 +31,8 @@ const (
 	defaultBeerLabelModel         = "gpt-5.4-mini"
 	defaultBeerLabelOpenAIBaseURL = "https://api.openai.com/v1"
 	defaultBeerLabelOpenAITimeout = 30 * time.Second
+	defaultBeerLabelGeminiModel   = "gemini-2.5-flash-lite"
+	defaultBeerLabelGeminiTimeout = 30 * time.Second
 )
 
 type Config struct {
@@ -100,6 +102,9 @@ type BeerLabelConfig struct {
 	OpenAIAPIKey  string        `mapstructure:"openai_api_key"`
 	OpenAIBaseURL string        `mapstructure:"openai_base_url"`
 	OpenAITimeout time.Duration `mapstructure:"openai_timeout"`
+	GeminiAPIKey  string        `mapstructure:"gemini_api_key"`
+	GeminiModel   string        `mapstructure:"gemini_model"`
+	GeminiTimeout time.Duration `mapstructure:"gemini_timeout"`
 }
 
 type ObservabilityConfig struct {
@@ -193,6 +198,9 @@ func setDefaults(loader *viper.Viper, env string) {
 	loader.SetDefault("beer_label.openai_api_key", "")
 	loader.SetDefault("beer_label.openai_base_url", defaultBeerLabelOpenAIBaseURL)
 	loader.SetDefault("beer_label.openai_timeout", defaultBeerLabelOpenAITimeout)
+	loader.SetDefault("beer_label.gemini_api_key", "")
+	loader.SetDefault("beer_label.gemini_model", defaultBeerLabelGeminiModel)
+	loader.SetDefault("beer_label.gemini_timeout", defaultBeerLabelGeminiTimeout)
 	loader.SetDefault("observability.service_name", "hoppify")
 	loader.SetDefault("observability.metrics.path", "/metrics")
 	loader.SetDefault("observability.metrics.addr", "127.0.0.1:3001")
@@ -231,6 +239,14 @@ func bindEnv(loader *viper.Viper) {
 	_ = loader.BindEnv("beer_label.openai_api_key", "HOPPIFY_BEER_LABEL_OPENAI_API_KEY", "OPENAI_API_KEY")
 	_ = loader.BindEnv("beer_label.openai_base_url", "HOPPIFY_BEER_LABEL_OPENAI_BASE_URL")
 	_ = loader.BindEnv("beer_label.openai_timeout", "HOPPIFY_BEER_LABEL_OPENAI_TIMEOUT")
+	_ = loader.BindEnv(
+		"beer_label.gemini_api_key",
+		"HOPPIFY_BEER_LABEL_GEMINI_API_KEY",
+		"GEMINI_API_KEY",
+		"GOOGLE_API_KEY",
+	)
+	_ = loader.BindEnv("beer_label.gemini_model", "HOPPIFY_BEER_LABEL_GEMINI_MODEL")
+	_ = loader.BindEnv("beer_label.gemini_timeout", "HOPPIFY_BEER_LABEL_GEMINI_TIMEOUT")
 	_ = loader.BindEnv("observability.service_name", "HOPPIFY_SERVICE_NAME", "OTEL_SERVICE_NAME")
 	_ = loader.BindEnv("observability.metrics.path", "HOPPIFY_METRICS_PATH")
 	_ = loader.BindEnv("observability.metrics.addr", "HOPPIFY_METRICS_ADDR")

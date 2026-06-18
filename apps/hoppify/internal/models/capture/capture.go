@@ -52,6 +52,7 @@ type Response struct {
 	UUID string `json:"uuid"`
 	Type string `json:"type"`
 	URI  string `json:"uri"`
+	URL  string `json:"url,omitempty"`
 }
 
 type CapturesResponse struct {
@@ -73,10 +74,13 @@ func (record *Record) Object() Object {
 }
 
 func (record *Record) Response() Response {
+	uri := URI(record.Bucket, record.ObjectKey)
+
 	return Response{
 		UUID: record.UUID.String(),
 		Type: record.Type,
-		URI:  URI(record.Bucket, record.ObjectKey),
+		URI:  uri,
+		URL:  uri,
 	}
 }
 

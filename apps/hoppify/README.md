@@ -9,14 +9,16 @@ Current production behavior:
 - `GET /live` returns a JSON liveness response.
 - `GET /metrics` exposes a minimal Prometheus text endpoint.
 - `GET /swagger.json` and `GET /swagger` serve OpenAPI documentation.
-- `POST /api/v1/captures` accepts 1..10 JPEG, PNG, or WebP images as multipart `files`, converts them
-  to JPEG quality 95, stores them in S3-compatible object storage, and records metadata in Postgres.
-- `POST /api/v1/detect` accepts a stored capture UUID and returns Ultralytics-style object detections.
-- `POST /api/v1/beer-labels/identify` accepts a stored capture or crop UUID, asks the configured OpenAI
-  vision model for structured beer label identification without web search, and caches the result in
-  Postgres by UUID and prompt version.
-- `POST /api/v2/beer-labels/identify` uses the same request body, allows OpenAI hosted web search for
-  verification, and may return web sources plus an Untappd direct-match or search recommendation.
+- `POST /api/v1/captures` accepts 1..10 JPEG, PNG, or WebP images as multipart `files`, stores JPEG
+  uploads byte-for-byte without recompression, converts PNG/WebP uploads to JPEG quality 95, stores
+  them in S3-compatible object storage, and records metadata in Postgres. Responses include `uuid`,
+  `uri`, and `url`.
+- `POST /api/v1/detect` accepts exactly one source: JSON `uuid`, JSON `url`/`uri` with an `s3://...`
+  object URI, or a multipart `file`, and returns Ultralytics-style object detections.
+- `POST /api/v1/crops` creates JPEG crops and returns each crop `uuid`, `uri`, and `url`.
+- `POST /api/v1/beer-labels/identify` accepts JSON `uuid`, `url`, or `uri`, uses Gemini 2.5 Flash-Lite
+  with the v3 vision-only prompt, and caches by UUID and v3 prompt version when the source maps to a
+  stored capture or crop.
 
 Required runtime dependencies:
 
@@ -28,8 +30,9 @@ Required runtime dependencies:
 - ONNX Runtime and the SKU-110K YOLO11s 640 ONNX model. Production and e2e Docker images download
   `weights/sku110k-yolo11-s640.onnx` during image build, verify its SHA256 checksum, and copy it to
   `/app/models/sku110k-yolo11-s640.onnx` with `libonnxruntime.so.1.22.0` under `/app/lib`.
-- OpenAI API access for beer label recognition. Configure `HOPPIFY_BEER_LABEL_OPENAI_API_KEY` or
-  `OPENAI_API_KEY`; without a key, the beer label endpoint returns `model_unavailable`.
+- Gemini API access for beer label recognition. Configure `HOPPIFY_BEER_LABEL_GEMINI_API_KEY`,
+  `GEMINI_API_KEY`, or `GOOGLE_API_KEY`; without a key, the beer label endpoint returns
+  `model_unavailable`.
 - Prometheus metrics on the configured metrics address, defaulting to `127.0.0.1:3001` locally.
 
 Configuration is loaded from `config/{local,dev,e2e,prod}.yaml`, selected by `HOPPIFY_ENV`, or from
