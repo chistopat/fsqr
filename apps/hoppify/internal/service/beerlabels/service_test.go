@@ -145,6 +145,82 @@ func TestServiceMapsUnavailableRecognizer(t *testing.T) {
 	assertBeerLabelError(t, err, ModelUnavailable)
 }
 
+func TestServiceRetriesTransientRecognizerErrors(t *testing.T) {
+	t.Parallel()
+
+	captureID := uuid.MustParse(testCaptureUUID)
+	captures := &fakeCaptureRepository{record: newCaptureRecord(captureID)}
+	recognitions := newFakeRecognitionRepository()
+	storage := &fakeStorage{object: capturemodel.Object{Body: []byte("jpeg")}}
+	recognizer := &fakeRecognizer{
+		errs: []error{errors.New("temporary gemini error"), nil},
+		result: beerlabelmodel.Result{
+			Status:     beerlabelmodel.StatusIdentified,
+			Container:  beerlabelmodel.ContainerBottle,
+			Confidence: 0.82,
+			Evidence:   []string{"label text appears readable"},
+		},
+	}
+	service := newTestServiceWithConfig(t, captures, recognitions, storage, recognizer, Config{
+		RecognitionRetries:    2,
+		RecognitionRetryDelay: -1,
+	})
+
+	response, err := service.Identify(context.Background(), beerlabelmodel.Request{UUID: testCaptureUUID})
+	if err != nil {
+		t.Fatalf("identify beer label: %v", err)
+	}
+
+	if response.Result.Status != beerlabelmodel.StatusIdentified {
+		t.Fatalf("unexpected recognition result: %#v", response.Result)
+	}
+	if recognizer.calls != 2 {
+		t.Fatalf("expected recognizer to be retried once, got %d calls", recognizer.calls)
+	}
+}
+
+func TestServiceIdentifiesBatchWithPerItemErrors(t *testing.T) {
+	t.Parallel()
+
+	captureID := uuid.MustParse(testCaptureUUID)
+	missingID := uuid.MustParse("11111111-1111-4111-8111-111111111111")
+	captures := &fakeCaptureRepository{record: newCaptureRecord(captureID)}
+	recognitions := newFakeRecognitionRepository()
+	storage := &fakeStorage{object: capturemodel.Object{Body: []byte("jpeg")}}
+	recognizer := &fakeRecognizer{result: beerlabelmodel.Result{
+		Status:     beerlabelmodel.StatusIdentified,
+		Container:  beerlabelmodel.ContainerBottle,
+		Confidence: 0.82,
+		Evidence:   []string{"label text appears readable"},
+	}}
+	service := newTestServiceWithConfig(t, captures, recognitions, storage, recognizer, Config{
+		RecognitionConcurrency: 1,
+		RecognitionRetries:     -1,
+		RecognitionRetryDelay:  -1,
+	})
+
+	response, err := service.IdentifyBatch(context.Background(), beerlabelmodel.BatchRequest{
+		UUIDs: []string{captureID.String(), missingID.String()},
+	})
+	if err != nil {
+		t.Fatalf("identify beer label batch: %v", err)
+	}
+
+	if len(response.Recognitions) != 2 {
+		t.Fatalf("expected two batch items, got %d", len(response.Recognitions))
+	}
+	if response.Recognitions[0].Recognition == nil ||
+		response.Recognitions[0].Recognition.Result.Status != beerlabelmodel.StatusIdentified {
+		t.Fatalf("unexpected successful batch item: %#v", response.Recognitions[0])
+	}
+	if response.Recognitions[1].Error == nil || response.Recognitions[1].Error.Code != string(NotFound) {
+		t.Fatalf("expected not found item error, got %#v", response.Recognitions[1])
+	}
+	if recognizer.calls != 1 {
+		t.Fatalf("expected only found crop to call recognizer, got %d calls", recognizer.calls)
+	}
+}
+
 func TestServiceReturnsCachedRecognitionForS3URL(t *testing.T) {
 	t.Parallel()
 
@@ -255,6 +331,24 @@ func newTestService(
 	t.Helper()
 
 	service, err := NewService(captures, recognitions, storage, recognizer, Config{})
+	if err != nil {
+		t.Fatalf("new service: %v", err)
+	}
+
+	return service
+}
+
+func newTestServiceWithConfig(
+	t *testing.T,
+	captures CaptureRepository,
+	recognitions RecognitionRepository,
+	storage ObjectStorage,
+	recognizer Recognizer,
+	cfg Config,
+) *Service {
+	t.Helper()
+
+	service, err := NewService(captures, recognitions, storage, recognizer, cfg)
 	if err != nil {
 		t.Fatalf("new service: %v", err)
 	}
@@ -409,10 +503,18 @@ type fakeRecognizer struct {
 	promptVersion string
 	calls         int
 	err           error
+	errs          []error
 }
 
 func (recognizer *fakeRecognizer) IdentifyBeerLabel(_ context.Context, _ []byte) (beerlabelmodel.Result, error) {
 	recognizer.calls++
+	if len(recognizer.errs) > 0 {
+		err := recognizer.errs[0]
+		recognizer.errs = recognizer.errs[1:]
+		if err != nil {
+			return beerlabelmodel.Result{}, err
+		}
+	}
 	if recognizer.err != nil {
 		return beerlabelmodel.Result{}, recognizer.err
 	}

@@ -104,6 +104,25 @@ type Response struct {
 	CreatedAt     time.Time `json:"createdAt"`
 }
 
+type BatchRequest struct {
+	UUIDs []string `json:"uuids"`
+}
+
+type BatchResponse struct {
+	Recognitions []BatchItem `json:"recognitions"`
+}
+
+type BatchItem struct {
+	UUID        string      `json:"uuid"`
+	Recognition *Response   `json:"recognition,omitempty"`
+	Error       *BatchError `json:"error,omitempty"`
+}
+
+type BatchError struct {
+	Code    string `json:"code"`
+	Message string `json:"message"`
+}
+
 type ListResult struct {
 	Records []ListRecord
 	HasMore bool

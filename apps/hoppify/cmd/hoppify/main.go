@@ -154,7 +154,13 @@ func newBeerLabelService(
 		recognitions,
 		objectStorage,
 		newBeerLabelGeminiRecognizer(cfg, appLogger.Named("beer_labels.gemini")),
-		beerlabelservice.Config{MaxObjectBytes: maxObjectBytes},
+		beerlabelservice.Config{
+			MaxObjectBytes:          maxObjectBytes,
+			RecognitionConcurrency:  cfg.RecognitionConcurrency,
+			RecognitionRetries:      cfg.RecognitionRetries,
+			RecognitionRetryDelay:   cfg.RecognitionRetryDelay,
+			RecognitionMaxBatchSize: cfg.RecognitionMaxBatchSize,
+		},
 	)
 	if err != nil {
 		return nil, fmt.Errorf("init beer labels service: %w", err)

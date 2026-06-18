@@ -460,6 +460,45 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+  /api/v1/beer-labels/identify-batch:
+    post:
+      summary: Identify beer labels from stored crops
+      description: >
+        Runs beer label recognition for a list of stored crop UUIDs. The server controls Gemini
+        concurrency with a worker pool, applies retries for transient inference errors, and returns
+        one item per requested UUID. Individual crop failures are returned inside the response item.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BeerLabelIdentifyBatchRequest"
+            examples:
+              crops:
+                summary: Identify multiple crop UUIDs
+                value:
+                  uuids:
+                    - 3b7eaa56-f7a6-57e1-bff6-552b103bb263
+                    - 3a9245bb-81ef-5ef5-87df-92240c529936
+      responses:
+        "200":
+          description: Batch recognition completed with per-crop success or error items
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BeerLabelIdentifyBatchResponse"
+        "400":
+          description: Invalid JSON request or UUID list
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          description: Internal batch execution error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
 components:
   schemas:
     BeerLabelIdentifyRequest:
@@ -514,6 +553,66 @@ components:
         createdAt:
           type: string
           format: date-time
+      additionalProperties: false
+    BeerLabelIdentifyBatchRequest:
+      type: object
+      required:
+        - uuids
+      properties:
+        uuids:
+          type: array
+          minItems: 1
+          maxItems: 300
+          items:
+            type: string
+            format: uuid
+          example:
+            - 3b7eaa56-f7a6-57e1-bff6-552b103bb263
+            - 3a9245bb-81ef-5ef5-87df-92240c529936
+      additionalProperties: false
+    BeerLabelIdentifyBatchResponse:
+      type: object
+      required:
+        - recognitions
+      properties:
+        recognitions:
+          type: array
+          items:
+            $ref: "#/components/schemas/BeerLabelIdentifyBatchItem"
+      additionalProperties: false
+    BeerLabelIdentifyBatchItem:
+      type: object
+      required:
+        - uuid
+      properties:
+        uuid:
+          type: string
+          format: uuid
+          example: 3b7eaa56-f7a6-57e1-bff6-552b103bb263
+        recognition:
+          $ref: "#/components/schemas/BeerLabelIdentifyResponse"
+        error:
+          $ref: "#/components/schemas/BeerLabelBatchError"
+      additionalProperties: false
+    BeerLabelBatchError:
+      type: object
+      required:
+        - code
+        - message
+      properties:
+        code:
+          type: string
+          enum:
+            - invalid_request
+            - unsupported_media_type
+            - storage_error
+            - not_found
+            - model_unavailable
+            - inference_error
+            - internal_error
+        message:
+          type: string
+          example: capture was not found
       additionalProperties: false
     BeerLabelRecognitionListResponse:
       type: object

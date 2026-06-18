@@ -708,6 +708,113 @@ func TestIdentifyBeerLabelAcceptsS3URL(t *testing.T) {
 	}
 }
 
+func TestIdentifyBeerLabelsBatchReturnsPerCropResults(t *testing.T) {
+	t.Parallel()
+
+	expected := beerlabelmodel.BatchResponse{Recognitions: []beerlabelmodel.BatchItem{
+		{
+			UUID: "0190b67a-dc55-769d-9d2e-92d6d29af3c7",
+			Recognition: &beerlabelmodel.Response{
+				UUID:          "0190b67a-dc55-769d-9d2e-92d6d29af3c7",
+				Model:         "gemini-2.5-flash-lite",
+				PromptVersion: "beer-label-v3-gemini-2.5-flash-lite",
+				Result: beerlabelmodel.Result{
+					Status:     beerlabelmodel.StatusIdentified,
+					Container:  beerlabelmodel.ContainerBottle,
+					Confidence: 0.9,
+					Evidence:   []string{"visible label"},
+				},
+				CreatedAt: time.Unix(1, 0).UTC(),
+			},
+		},
+		{
+			UUID: "11111111-1111-4111-8111-111111111111",
+			Error: &beerlabelmodel.BatchError{
+				Code:    string(beerlabelservice.NotFound),
+				Message: "capture was not found",
+			},
+		},
+	}}
+	service := &fakeBeerLabelService{batchResponse: expected}
+	handler := NewHandler(WithBeerLabelService(service))
+	request := httptest.NewRequest(
+		http.MethodPost,
+		"/api/v1/beer-labels/identify-batch",
+		strings.NewReader(`{"uuids":["0190b67a-dc55-769d-9d2e-92d6d29af3c7","11111111-1111-4111-8111-111111111111"]}`),
+	)
+	response := httptest.NewRecorder()
+
+	handler.ServeHTTP(response, request)
+
+	if response.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d with body %q", http.StatusOK, response.Code, response.Body.String())
+	}
+	if len(service.batchRequest.UUIDs) != 2 {
+		t.Fatalf("expected two batch uuids, got %#v", service.batchRequest.UUIDs)
+	}
+
+	var actual beerlabelmodel.BatchResponse
+	if err := json.Unmarshal(response.Body.Bytes(), &actual); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if len(actual.Recognitions) != 2 ||
+		actual.Recognitions[0].Recognition == nil ||
+		actual.Recognitions[1].Error == nil {
+		t.Fatalf("unexpected beer label batch response: %#v", actual)
+	}
+}
+
+func TestIdentifyBeerLabelsBatchStreamsNDJSON(t *testing.T) {
+	t.Parallel()
+
+	service := &fakeBeerLabelService{batchResponse: beerlabelmodel.BatchResponse{Recognitions: []beerlabelmodel.BatchItem{
+		{
+			UUID: "0190b67a-dc55-769d-9d2e-92d6d29af3c7",
+			Recognition: &beerlabelmodel.Response{
+				UUID:          "0190b67a-dc55-769d-9d2e-92d6d29af3c7",
+				Model:         "gemini-2.5-flash-lite",
+				PromptVersion: "beer-label-v3-gemini-2.5-flash-lite",
+				Result: beerlabelmodel.Result{
+					Status:     beerlabelmodel.StatusIdentified,
+					Container:  beerlabelmodel.ContainerBottle,
+					Confidence: 0.9,
+					Evidence:   []string{"visible label"},
+				},
+				CreatedAt: time.Unix(1, 0).UTC(),
+			},
+		},
+	}}}
+	handler := NewHandler(WithBeerLabelService(service))
+	request := httptest.NewRequest(
+		http.MethodPost,
+		"/api/v1/beer-labels/identify-batch",
+		strings.NewReader(`{"uuids":["0190b67a-dc55-769d-9d2e-92d6d29af3c7"]}`),
+	)
+	request.Header.Set("Accept", "application/x-ndjson")
+	response := httptest.NewRecorder()
+
+	handler.ServeHTTP(response, request)
+
+	if response.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d with body %q", http.StatusOK, response.Code, response.Body.String())
+	}
+	if response.Header().Get("Content-Type") != "application/x-ndjson" {
+		t.Fatalf("unexpected content type: %q", response.Header().Get("Content-Type"))
+	}
+
+	lines := strings.Split(strings.TrimSpace(response.Body.String()), "\n")
+	if len(lines) != 1 {
+		t.Fatalf("expected one ndjson line, got %d lines in %q", len(lines), response.Body.String())
+	}
+	var item beerlabelmodel.BatchItem
+	if err := json.Unmarshal([]byte(lines[0]), &item); err != nil {
+		t.Fatalf("decode ndjson item: %v", err)
+	}
+	if item.Recognition == nil || item.Recognition.Result.Status != beerlabelmodel.StatusIdentified {
+		t.Fatalf("unexpected streamed item: %#v", item)
+	}
+}
+
 func TestIdentifyBeerLabelVersionedRoutesAreGone(t *testing.T) {
 	t.Parallel()
 
@@ -844,11 +951,13 @@ type fakeCropService struct {
 }
 
 type fakeBeerLabelService struct {
-	response     beerlabelmodel.Response
-	request      beerlabelmodel.Request
-	listResponse beerlabelmodel.ListResponse
-	listQuery    capturemodel.ListQuery
-	err          error
+	response      beerlabelmodel.Response
+	request       beerlabelmodel.Request
+	batchResponse beerlabelmodel.BatchResponse
+	batchRequest  beerlabelmodel.BatchRequest
+	listResponse  beerlabelmodel.ListResponse
+	listQuery     capturemodel.ListQuery
+	err           error
 }
 
 func (provider *fakeCaptureStatsProvider) CaptureStats(_ context.Context) (capturemodel.Stats, error) {
@@ -901,6 +1010,36 @@ func (service *fakeBeerLabelService) Identify(
 	}
 
 	return service.response, nil
+}
+
+func (service *fakeBeerLabelService) IdentifyBatch(
+	_ context.Context,
+	request beerlabelmodel.BatchRequest,
+) (beerlabelmodel.BatchResponse, error) {
+	service.batchRequest = request
+	if service.err != nil {
+		return beerlabelmodel.BatchResponse{}, service.err
+	}
+
+	return service.batchResponse, nil
+}
+
+func (service *fakeBeerLabelService) IdentifyBatchStream(
+	_ context.Context,
+	request beerlabelmodel.BatchRequest,
+	emit func(beerlabelmodel.BatchItem) error,
+) error {
+	service.batchRequest = request
+	if service.err != nil {
+		return service.err
+	}
+	for _, item := range service.batchResponse.Recognitions {
+		if err := emit(item); err != nil {
+			return err
+		}
+	}
+
+	return nil
 }
 
 func (service *fakeBeerLabelService) ListRecognitions(

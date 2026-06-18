@@ -49,6 +49,10 @@ beer_label:
   gemini_api_key: ""
   gemini_model: "gemini-2.5-flash-lite"
   gemini_timeout: 30s
+  recognition_concurrency: 4
+  recognition_retries: 2
+  recognition_retry_delay: 250ms
+  recognition_max_batch_size: 300
 
 observability:
   service_name: hoppify

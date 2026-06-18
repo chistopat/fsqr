@@ -12,27 +12,31 @@ import (
 )
 
 const (
-	defaultEnv                    = "local"
-	defaultConfigDir              = "config"
-	defaultDatabaseDSN            = "postgres://hoppify@127.0.0.1:5432/hoppify?sslmode=disable"
-	defaultDatabaseConnectTimeout = 5 * time.Second
-	defaultS3Bucket               = "hoppify"
-	defaultS3Region               = "us-east-1"
-	defaultJPEGQuality            = 95
-	defaultMaxFiles               = 10
-	defaultMaxFileBytes           = 15 * 1024 * 1024
-	defaultMaxRequestSize         = 150 * 1024 * 1024
-	defaultDetectorModelPath      = "models/sku110k-yolo11-s640.onnx"
-	defaultDetectorRuntimeLibrary = ""
-	defaultDetectorImageSize      = 640
-	defaultDetectorConfidence     = 0.25
-	defaultDetectorIOU            = 0.7
-	defaultDetectorMaxDetections  = 300
-	defaultBeerLabelModel         = "gpt-5.4-mini"
-	defaultBeerLabelOpenAIBaseURL = "https://api.openai.com/v1"
-	defaultBeerLabelOpenAITimeout = 30 * time.Second
-	defaultBeerLabelGeminiModel   = "gemini-2.5-flash-lite"
-	defaultBeerLabelGeminiTimeout = 30 * time.Second
+	defaultEnv                              = "local"
+	defaultConfigDir                        = "config"
+	defaultDatabaseDSN                      = "postgres://hoppify@127.0.0.1:5432/hoppify?sslmode=disable"
+	defaultDatabaseConnectTimeout           = 5 * time.Second
+	defaultS3Bucket                         = "hoppify"
+	defaultS3Region                         = "us-east-1"
+	defaultJPEGQuality                      = 95
+	defaultMaxFiles                         = 10
+	defaultMaxFileBytes                     = 15 * 1024 * 1024
+	defaultMaxRequestSize                   = 150 * 1024 * 1024
+	defaultDetectorModelPath                = "models/sku110k-yolo11-s640.onnx"
+	defaultDetectorRuntimeLibrary           = ""
+	defaultDetectorImageSize                = 640
+	defaultDetectorConfidence               = 0.25
+	defaultDetectorIOU                      = 0.7
+	defaultDetectorMaxDetections            = 300
+	defaultBeerLabelModel                   = "gpt-5.4-mini"
+	defaultBeerLabelOpenAIBaseURL           = "https://api.openai.com/v1"
+	defaultBeerLabelOpenAITimeout           = 30 * time.Second
+	defaultBeerLabelGeminiModel             = "gemini-2.5-flash-lite"
+	defaultBeerLabelGeminiTimeout           = 30 * time.Second
+	defaultBeerLabelRecognitionConcurrency  = 4
+	defaultBeerLabelRecognitionRetries      = 2
+	defaultBeerLabelRecognitionRetryDelay   = 250 * time.Millisecond
+	defaultBeerLabelRecognitionMaxBatchSize = 300
 )
 
 type Config struct {
@@ -98,13 +102,17 @@ type DetectorConfig struct {
 }
 
 type BeerLabelConfig struct {
-	Model         string        `mapstructure:"model"`
-	OpenAIAPIKey  string        `mapstructure:"openai_api_key"`
-	OpenAIBaseURL string        `mapstructure:"openai_base_url"`
-	OpenAITimeout time.Duration `mapstructure:"openai_timeout"`
-	GeminiAPIKey  string        `mapstructure:"gemini_api_key"`
-	GeminiModel   string        `mapstructure:"gemini_model"`
-	GeminiTimeout time.Duration `mapstructure:"gemini_timeout"`
+	Model                   string        `mapstructure:"model"`
+	OpenAIAPIKey            string        `mapstructure:"openai_api_key"`
+	OpenAIBaseURL           string        `mapstructure:"openai_base_url"`
+	OpenAITimeout           time.Duration `mapstructure:"openai_timeout"`
+	GeminiAPIKey            string        `mapstructure:"gemini_api_key"`
+	GeminiModel             string        `mapstructure:"gemini_model"`
+	GeminiTimeout           time.Duration `mapstructure:"gemini_timeout"`
+	RecognitionConcurrency  int           `mapstructure:"recognition_concurrency"`
+	RecognitionRetries      int           `mapstructure:"recognition_retries"`
+	RecognitionRetryDelay   time.Duration `mapstructure:"recognition_retry_delay"`
+	RecognitionMaxBatchSize int           `mapstructure:"recognition_max_batch_size"`
 }
 
 type ObservabilityConfig struct {
@@ -201,6 +209,10 @@ func setDefaults(loader *viper.Viper, env string) {
 	loader.SetDefault("beer_label.gemini_api_key", "")
 	loader.SetDefault("beer_label.gemini_model", defaultBeerLabelGeminiModel)
 	loader.SetDefault("beer_label.gemini_timeout", defaultBeerLabelGeminiTimeout)
+	loader.SetDefault("beer_label.recognition_concurrency", defaultBeerLabelRecognitionConcurrency)
+	loader.SetDefault("beer_label.recognition_retries", defaultBeerLabelRecognitionRetries)
+	loader.SetDefault("beer_label.recognition_retry_delay", defaultBeerLabelRecognitionRetryDelay)
+	loader.SetDefault("beer_label.recognition_max_batch_size", defaultBeerLabelRecognitionMaxBatchSize)
 	loader.SetDefault("observability.service_name", "hoppify")
 	loader.SetDefault("observability.metrics.path", "/metrics")
 	loader.SetDefault("observability.metrics.addr", "127.0.0.1:3001")
@@ -247,6 +259,10 @@ func bindEnv(loader *viper.Viper) {
 	)
 	_ = loader.BindEnv("beer_label.gemini_model", "HOPPIFY_BEER_LABEL_GEMINI_MODEL")
 	_ = loader.BindEnv("beer_label.gemini_timeout", "HOPPIFY_BEER_LABEL_GEMINI_TIMEOUT")
+	_ = loader.BindEnv("beer_label.recognition_concurrency", "HOPPIFY_BEER_LABEL_RECOGNITION_CONCURRENCY")
+	_ = loader.BindEnv("beer_label.recognition_retries", "HOPPIFY_BEER_LABEL_RECOGNITION_RETRIES")
+	_ = loader.BindEnv("beer_label.recognition_retry_delay", "HOPPIFY_BEER_LABEL_RECOGNITION_RETRY_DELAY")
+	_ = loader.BindEnv("beer_label.recognition_max_batch_size", "HOPPIFY_BEER_LABEL_RECOGNITION_MAX_BATCH_SIZE")
 	_ = loader.BindEnv("observability.service_name", "HOPPIFY_SERVICE_NAME", "OTEL_SERVICE_NAME")
 	_ = loader.BindEnv("observability.metrics.path", "HOPPIFY_METRICS_PATH")
 	_ = loader.BindEnv("observability.metrics.addr", "HOPPIFY_METRICS_ADDR")

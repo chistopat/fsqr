@@ -11,6 +11,8 @@
   --accent-strong: #135c49;
   --amber: #b26b19;
   --danger: #b42318;
+  --danger-strong: #8f1d16;
+  --danger-soft: #ffe7e3;
   --shadow: 0 16px 34px rgba(23, 32, 42, 0.10);
 }
 
@@ -121,6 +123,7 @@ button:hover {
 }
 
 .nav-icon {
+  position: relative;
   width: 16px;
   height: 16px;
   border: 2px solid currentColor;
@@ -128,6 +131,45 @@ button:hover {
   box-shadow:
     8px 0 0 -5px currentColor,
     0 8px 0 -5px currentColor;
+}
+
+.add-nav {
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  color: #ffffff;
+  background: var(--danger);
+  font-weight: 900;
+}
+
+.add-nav.active,
+.add-nav:hover {
+  color: #ffffff;
+  background: var(--danger-strong);
+}
+
+.add-icon {
+  border-radius: 50%;
+  box-shadow: none;
+}
+
+.add-icon::before,
+.add-icon::after {
+  position: absolute;
+  content: "";
+  background: currentColor;
+}
+
+.add-icon::before {
+  top: 5px;
+  right: 3px;
+  left: 3px;
+  height: 2px;
+}
+
+.add-icon::after {
+  top: 3px;
+  bottom: 3px;
+  left: 5px;
+  width: 2px;
 }
 
 .crops-icon {
@@ -208,6 +250,279 @@ h1 {
 
 .content-primary {
   min-width: 0;
+}
+
+.add-content {
+  display: grid;
+  gap: 20px;
+}
+
+.add-panel {
+  display: grid;
+  gap: 16px;
+}
+
+.upload-frame {
+  position: relative;
+  display: grid;
+  min-height: clamp(320px, 42vh, 560px);
+  place-items: center;
+  overflow: hidden;
+  border: 2px dashed color-mix(in srgb, var(--danger) 42%, var(--line));
+  border-radius: 8px;
+  background: var(--surface);
+  box-shadow: var(--shadow);
+  cursor: pointer;
+}
+
+.upload-frame:hover,
+.upload-frame-active {
+  border-color: var(--danger);
+  background: #fffafa;
+}
+
+.upload-frame-busy {
+  cursor: progress;
+}
+
+.upload-frame input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.upload-empty {
+  display: grid;
+  place-items: center;
+  gap: 12px;
+  color: var(--danger);
+  font-size: clamp(1.35rem, 2.4vw, 2.2rem);
+  font-weight: 900;
+}
+
+.upload-plus {
+  display: grid;
+  width: 58px;
+  height: 58px;
+  place-items: center;
+  border: 2px solid currentColor;
+  border-radius: 50%;
+  font-size: 2.3rem;
+  line-height: 1;
+}
+
+.upload-frame-preview {
+  border-style: solid;
+  background: #0d1117;
+}
+
+.upload-preview {
+  display: block;
+  width: 100%;
+  height: 100%;
+  max-height: min(64vh, 720px);
+  object-fit: contain;
+}
+
+.upload-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  color: #ffffff;
+  background: rgba(13, 17, 23, 0.62);
+  font-weight: 900;
+}
+
+.pipeline-summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 14px 16px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+}
+
+.summary-title {
+  font-size: 1rem;
+  font-weight: 900;
+}
+
+.summary-detail {
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.reset-button {
+  flex: 0 0 auto;
+  border-color: var(--danger);
+  background: var(--danger);
+  font-weight: 900;
+}
+
+.reset-button:hover {
+  border-color: var(--danger-strong);
+  background: var(--danger-strong);
+}
+
+.detected-count {
+  color: var(--danger-strong);
+  font-size: clamp(1.3rem, 2.1vw, 2rem);
+  font-weight: 900;
+}
+
+.pipeline-error {
+  color: var(--danger);
+  font-weight: 800;
+}
+
+.pipeline-progress-panel {
+  display: grid;
+  gap: 9px;
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  box-shadow: var(--shadow);
+}
+
+.progress-header,
+.progress-meta {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  color: var(--muted);
+  font-size: 0.88rem;
+  font-weight: 900;
+}
+
+.progress-header {
+  color: var(--text);
+}
+
+.progress-track {
+  overflow: hidden;
+  height: 24px;
+  border-radius: 6px;
+  background: #e6ebee;
+}
+
+.progress-bar {
+  height: 100%;
+  background: linear-gradient(90deg, var(--danger), #1f7a60);
+  transition: width 180ms ease;
+}
+
+.progress-failed {
+  color: var(--danger);
+}
+
+.pipeline-table-panel {
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  box-shadow: var(--shadow);
+}
+
+.pipeline-table-wrap {
+  overflow-x: auto;
+}
+
+.pipeline-table {
+  width: 100%;
+  min-width: 1040px;
+  border-collapse: collapse;
+  font-size: 0.86rem;
+}
+
+.pipeline-table th,
+.pipeline-table td {
+  padding: 11px 12px;
+  border-bottom: 1px solid var(--line);
+  text-align: left;
+  vertical-align: middle;
+}
+
+.pipeline-table th {
+  color: #5c6974;
+  background: #f8faf9;
+  font-size: 0.76rem;
+  font-weight: 900;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
+.pipeline-table tbody tr:hover {
+  background: #f7fbf9;
+}
+
+.pipeline-table tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.pipeline-crop {
+  display: grid;
+  width: 72px;
+  height: 84px;
+  place-items: center;
+  overflow: hidden;
+  border: 1px solid #25313c;
+  border-radius: 6px;
+  background: #0d1117;
+}
+
+.pipeline-crop img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.row-waiting {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--muted);
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.row-error {
+  display: inline-flex;
+  min-height: 26px;
+  align-items: center;
+  padding: 4px 8px;
+  border-radius: 999px;
+  color: var(--danger);
+  background: var(--danger-soft);
+  font-size: 0.78rem;
+  font-weight: 900;
+  white-space: nowrap;
+}
+
+.spinner {
+  display: inline-block;
+  width: 26px;
+  height: 26px;
+  border: 3px solid rgba(255, 255, 255, 0.38);
+  border-top-color: currentColor;
+  border-radius: 50%;
+  animation: spin 760ms linear infinite;
+}
+
+.spinner-small {
+  width: 16px;
+  height: 16px;
+  border-width: 2px;
 }
 
 .content-with-preview {
@@ -583,6 +898,12 @@ h1 {
   text-decoration: underline;
 }
 
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 @media (max-width: 860px) {
   .app-shell {
     grid-template-columns: 1fr;
@@ -613,6 +934,15 @@ h1 {
   .preview-panel {
     position: static;
     order: -1;
+  }
+
+  .pipeline-summary {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .reset-button {
+    width: 100%;
   }
 }
 

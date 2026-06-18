@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"mime"
 	"strings"
+	"sync"
 	"time"
 
 	beerlabelmodel "github.com/chistopat/hoppify/internal/models/beerlabel"
@@ -16,9 +17,13 @@ import (
 )
 
 const (
-	defaultMaxObjectBytes = 15 * 1024 * 1024
-	defaultListLimit      = 30
-	maxListLimit          = 100
+	defaultMaxObjectBytes          = 15 * 1024 * 1024
+	defaultListLimit               = 30
+	maxListLimit                   = 100
+	defaultRecognitionConcurrency  = 4
+	defaultRecognitionRetries      = 2
+	defaultRecognitionRetryDelay   = 250 * time.Millisecond
+	defaultRecognitionMaxBatchSize = 300
 )
 
 type CaptureRepository interface {
@@ -46,15 +51,24 @@ type Recognizer interface {
 }
 
 type Config struct {
-	MaxObjectBytes int64
+	MaxObjectBytes          int64
+	RecognitionConcurrency  int
+	RecognitionRetries      int
+	RecognitionRetryDelay   time.Duration
+	RecognitionMaxBatchSize int
 }
 
 type Service struct {
-	captures       CaptureRepository
-	recognitions   RecognitionRepository
-	storage        ObjectStorage
-	recognizer     Recognizer
-	maxObjectBytes int64
+	captures                CaptureRepository
+	recognitions            RecognitionRepository
+	storage                 ObjectStorage
+	recognizer              Recognizer
+	maxObjectBytes          int64
+	recognitionConcurrency  int
+	recognitionRetries      int
+	recognitionRetryDelay   time.Duration
+	recognitionMaxBatchSize int
+	recognizerSemaphore     chan struct{}
 }
 
 type imageSource struct {
@@ -84,12 +98,19 @@ func NewService(
 		return nil, fmt.Errorf("beer labels recognizer is required")
 	}
 
+	concurrency := normalizeRecognitionConcurrency(cfg.RecognitionConcurrency)
+
 	return &Service{
-		captures:       captures,
-		recognitions:   recognitions,
-		storage:        storage,
-		recognizer:     recognizer,
-		maxObjectBytes: normalizeMaxObjectBytes(cfg.MaxObjectBytes),
+		captures:                captures,
+		recognitions:            recognitions,
+		storage:                 storage,
+		recognizer:              recognizer,
+		maxObjectBytes:          normalizeMaxObjectBytes(cfg.MaxObjectBytes),
+		recognitionConcurrency:  concurrency,
+		recognitionRetries:      normalizeRecognitionRetries(cfg.RecognitionRetries),
+		recognitionRetryDelay:   normalizeRecognitionRetryDelay(cfg.RecognitionRetryDelay),
+		recognitionMaxBatchSize: normalizeRecognitionMaxBatchSize(cfg.RecognitionMaxBatchSize),
+		recognizerSemaphore:     make(chan struct{}, concurrency),
 	}, nil
 }
 
@@ -103,6 +124,48 @@ func (svc *Service) Identify(ctx context.Context, request beerlabelmodel.Request
 	}
 
 	return svc.identifyByS3URL(ctx, request.ImageURL())
+}
+
+func (svc *Service) IdentifyBatch(
+	ctx context.Context,
+	request beerlabelmodel.BatchRequest,
+) (beerlabelmodel.BatchResponse, error) {
+	items := make([]beerlabelmodel.BatchItem, 0, len(request.UUIDs))
+	if err := svc.IdentifyBatchStream(ctx, request, func(item beerlabelmodel.BatchItem) error {
+		items = append(items, item)
+
+		return nil
+	}); err != nil {
+		return beerlabelmodel.BatchResponse{}, err
+	}
+
+	return beerlabelmodel.BatchResponse{Recognitions: items}, nil
+}
+
+func (svc *Service) IdentifyBatchStream(
+	ctx context.Context,
+	request beerlabelmodel.BatchRequest,
+	emit func(beerlabelmodel.BatchItem) error,
+) error {
+	if err := svc.validateBatchRequest(request); err != nil {
+		return err
+	}
+
+	batchCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
+	jobs := make(chan batchJob)
+	results := make(chan batchResult)
+	var workers sync.WaitGroup
+	workerCount := min(svc.recognitionConcurrency, len(request.UUIDs))
+	for range workerCount {
+		workers.Add(1)
+		go svc.identifyBatchWorker(batchCtx, jobs, results, &workers)
+	}
+	go sendBatchJobs(batchCtx, jobs, request.UUIDs)
+	go closeBatchResults(results, &workers)
+
+	return emitBatchResults(batchCtx, cancel, results, len(request.UUIDs), emit)
 }
 
 func (svc *Service) ListRecognitions(
@@ -209,7 +272,7 @@ func (svc *Service) identifyAndMaybeCache(
 	ctx context.Context,
 	source imageSource,
 ) (beerlabelmodel.Response, error) {
-	result, err := svc.recognizer.IdentifyBeerLabel(ctx, source.body)
+	result, err := svc.identifyWithRetry(ctx, source.body)
 	if errors.Is(err, ErrModelUnavailable) {
 		return beerlabelmodel.Response{}, newError(ModelUnavailable, "beer label model is unavailable", err)
 	}
@@ -249,6 +312,188 @@ func (svc *Service) identifyAndMaybeCache(
 	return responseFromRecord(&saved, false, source), nil
 }
 
+type batchJob struct {
+	index int
+	uuid  string
+}
+
+type batchResult struct {
+	index int
+	item  beerlabelmodel.BatchItem
+}
+
+func (svc *Service) identifyBatchWorker(
+	ctx context.Context,
+	jobs <-chan batchJob,
+	results chan<- batchResult,
+	workers *sync.WaitGroup,
+) {
+	defer workers.Done()
+	for job := range jobs {
+		response, err := svc.Identify(ctx, beerlabelmodel.Request{UUID: job.uuid})
+		item := beerlabelmodel.BatchItem{UUID: job.uuid}
+		if err != nil {
+			item.Error = batchErrorFromError(err)
+		} else {
+			item.Recognition = &response
+			if response.UUID != "" {
+				item.UUID = response.UUID
+			}
+		}
+
+		select {
+		case results <- batchResult{index: job.index, item: item}:
+		case <-ctx.Done():
+			return
+		}
+	}
+}
+
+func sendBatchJobs(ctx context.Context, jobs chan<- batchJob, uuids []string) {
+	defer close(jobs)
+	for index, rawUUID := range uuids {
+		select {
+		case jobs <- batchJob{index: index, uuid: strings.TrimSpace(rawUUID)}:
+		case <-ctx.Done():
+			return
+		}
+	}
+}
+
+func closeBatchResults(results chan<- batchResult, workers *sync.WaitGroup) {
+	workers.Wait()
+	close(results)
+}
+
+func emitBatchResults(
+	ctx context.Context,
+	cancel context.CancelFunc,
+	results <-chan batchResult,
+	size int,
+	emit func(beerlabelmodel.BatchItem) error,
+) error {
+	completed := 0
+	var emitErr error
+	for result := range results {
+		if emitErr == nil {
+			if err := emit(result.item); err != nil {
+				emitErr = err
+				cancel()
+			}
+		}
+		completed++
+	}
+	if emitErr != nil {
+		return newError(InternalError, "stream batch recognition result", emitErr)
+	}
+	if completed != size {
+		if err := ctx.Err(); err != nil {
+			return newError(InternalError, "batch recognition was canceled", err)
+		}
+
+		return newError(InternalError, "batch recognition was interrupted", nil)
+	}
+
+	return nil
+}
+
+func (svc *Service) identifyWithRetry(
+	ctx context.Context,
+	image []byte,
+) (beerlabelmodel.Result, error) {
+	var lastErr error
+	for attempt := 0; attempt <= svc.recognitionRetries; attempt++ {
+		if attempt > 0 {
+			if err := sleepContext(ctx, svc.recognitionRetryDelay); err != nil {
+				return beerlabelmodel.Result{}, err
+			}
+		}
+
+		result, err := svc.identifyOnce(ctx, image)
+		if err == nil {
+			return result, nil
+		}
+		if !isRetryableRecognizerError(err) {
+			return beerlabelmodel.Result{}, err
+		}
+		lastErr = err
+	}
+
+	return beerlabelmodel.Result{}, lastErr
+}
+
+func (svc *Service) identifyOnce(ctx context.Context, image []byte) (beerlabelmodel.Result, error) {
+	select {
+	case svc.recognizerSemaphore <- struct{}{}:
+		defer func() { <-svc.recognizerSemaphore }()
+	case <-ctx.Done():
+		return beerlabelmodel.Result{}, fmt.Errorf("wait for recognizer slot: %w", ctx.Err())
+	}
+
+	result, err := svc.recognizer.IdentifyBeerLabel(ctx, image)
+	if err != nil {
+		return beerlabelmodel.Result{}, fmt.Errorf("identify beer label with recognizer: %w", err)
+	}
+
+	return result, nil
+}
+
+func isRetryableRecognizerError(err error) bool {
+	if errors.Is(err, ErrModelUnavailable) ||
+		errors.Is(err, context.Canceled) ||
+		errors.Is(err, context.DeadlineExceeded) {
+		return false
+	}
+
+	return true
+}
+
+func sleepContext(ctx context.Context, delay time.Duration) error {
+	if delay <= 0 {
+		return nil
+	}
+
+	timer := time.NewTimer(delay)
+	defer timer.Stop()
+
+	select {
+	case <-timer.C:
+		return nil
+	case <-ctx.Done():
+		return fmt.Errorf("wait before recognition retry: %w", ctx.Err())
+	}
+}
+
+func (svc *Service) validateBatchRequest(request beerlabelmodel.BatchRequest) error {
+	if len(request.UUIDs) == 0 {
+		return newError(InvalidRequest, "uuids field is required", nil)
+	}
+	if len(request.UUIDs) > svc.recognitionMaxBatchSize {
+		message := fmt.Sprintf("uuids field accepts at most %d values", svc.recognitionMaxBatchSize)
+		return newError(InvalidRequest, message, nil)
+	}
+	for index, rawUUID := range request.UUIDs {
+		if _, err := uuid.Parse(strings.TrimSpace(rawUUID)); err != nil {
+			message := fmt.Sprintf("uuids[%d] must be a valid UUID", index)
+			return newError(InvalidRequest, message, err)
+		}
+	}
+
+	return nil
+}
+
+func batchErrorFromError(err error) *beerlabelmodel.BatchError {
+	var labelErr *Error
+	if errors.As(err, &labelErr) {
+		return &beerlabelmodel.BatchError{
+			Code:    string(labelErr.Code),
+			Message: labelErr.Message,
+		}
+	}
+
+	return &beerlabelmodel.BatchError{Code: string(InternalError), Message: "internal server error"}
+}
+
 func (svc *Service) captureIdentityForObjectKey(
 	ctx context.Context,
 	objectKey string,
@@ -275,6 +520,44 @@ func normalizeMaxObjectBytes(maxObjectBytes int64) int64 {
 	}
 
 	return maxObjectBytes
+}
+
+func normalizeRecognitionConcurrency(value int) int {
+	if value <= 0 {
+		return defaultRecognitionConcurrency
+	}
+
+	return value
+}
+
+func normalizeRecognitionRetries(value int) int {
+	if value < 0 {
+		return 0
+	}
+	if value == 0 {
+		return defaultRecognitionRetries
+	}
+
+	return value
+}
+
+func normalizeRecognitionRetryDelay(value time.Duration) time.Duration {
+	if value < 0 {
+		return 0
+	}
+	if value == 0 {
+		return defaultRecognitionRetryDelay
+	}
+
+	return value
+}
+
+func normalizeRecognitionMaxBatchSize(value int) int {
+	if value <= 0 {
+		return defaultRecognitionMaxBatchSize
+	}
+
+	return value
 }
 
 func normalizeListQuery(query capturemodel.ListQuery) capturemodel.ListQuery {

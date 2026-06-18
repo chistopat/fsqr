@@ -22,17 +22,19 @@ type liveResponse struct {
 type HandlerOption func(*handlerConfig)
 
 type handlerConfig struct {
-	captureService       CaptureCreator
-	captureLister        CaptureLister
-	captureImageProvider CaptureImageProvider
-	detectService        DetectorService
-	cropService          CropCreator
-	cropLister           CropLister
-	beerLabelService     BeerLabelIdentifier
-	beerLabelLister      BeerLabelRecognitionLister
-	limits               capturemodel.Limits
-	log                  *zap.Logger
-	metrics              *HTTPMetrics
+	captureService         CaptureCreator
+	captureLister          CaptureLister
+	captureImageProvider   CaptureImageProvider
+	detectService          DetectorService
+	cropService            CropCreator
+	cropLister             CropLister
+	beerLabelService       BeerLabelIdentifier
+	beerLabelBatchService  BeerLabelBatchIdentifier
+	beerLabelBatchStreamer BeerLabelBatchStreamer
+	beerLabelLister        BeerLabelRecognitionLister
+	limits                 capturemodel.Limits
+	log                    *zap.Logger
+	metrics                *HTTPMetrics
 }
 
 func WithCaptureService(service CaptureCreator) HandlerOption {
@@ -65,6 +67,12 @@ func WithCropService(service CropCreator) HandlerOption {
 func WithBeerLabelService(service BeerLabelIdentifier) HandlerOption {
 	return func(cfg *handlerConfig) {
 		cfg.beerLabelService = service
+		if batch, ok := service.(BeerLabelBatchIdentifier); ok {
+			cfg.beerLabelBatchService = batch
+		}
+		if streamer, ok := service.(BeerLabelBatchStreamer); ok {
+			cfg.beerLabelBatchStreamer = streamer
+		}
 		if lister, ok := service.(BeerLabelRecognitionLister); ok {
 			cfg.beerLabelLister = lister
 		}
@@ -112,6 +120,10 @@ func NewHandler(options ...HandlerOption) http.Handler {
 	mux.HandleFunc("POST /api/v1/crops", createCrops(cfg.cropService, cfg.log))
 	mux.HandleFunc("GET /api/v1/beer-labels/recognitions", listBeerLabelRecognitions(cfg.beerLabelLister, cfg.log))
 	mux.HandleFunc("POST /api/v1/beer-labels/identify", identifyBeerLabel(cfg.beerLabelService, cfg.log))
+	mux.HandleFunc(
+		"POST /api/v1/beer-labels/identify-batch",
+		identifyBeerLabels(cfg.beerLabelBatchService, cfg.beerLabelBatchStreamer, cfg.log),
+	)
 
 	return logAndMeasureRequests(mux, cfg.log, cfg.metrics)
 }

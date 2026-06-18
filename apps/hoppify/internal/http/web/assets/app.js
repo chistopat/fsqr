@@ -3,6 +3,16 @@ const h = React.createElement;
 const PAGE_SIZE = 30;
 
 const SECTIONS = {
+  add: {
+    key: "add",
+    label: "Add",
+    title: "Add",
+    kicker: "Workspace",
+    counterLabel: "Pipeline status",
+    singular: "image",
+    plural: "images",
+    view: "add",
+  },
   captures: {
     key: "captures",
     label: "Captures",
@@ -82,8 +92,687 @@ function App() {
     "div",
     { className: "app-shell" },
     h(Sidebar, { activeSection, onNavigate: handleNavigate }),
-    h(GalleryWorkspace, { section }),
+    section.view === "add" ? h(AddWorkspace, { section }) : h(GalleryWorkspace, { section }),
   );
+}
+
+function AddWorkspace({ section }) {
+  const [stage, setStage] = useState("idle");
+  const [dragActive, setDragActive] = useState(false);
+  const [fileName, setFileName] = useState("");
+  const [previewURL, setPreviewURL] = useState("");
+  const [capture, setCapture] = useState(null);
+  const [detectedCount, setDetectedCount] = useState(null);
+  const [rows, setRows] = useState([]);
+  const [error, setError] = useState("");
+  const fileInputRef = useRef(null);
+  const runRef = useRef(0);
+  const abortRef = useRef(null);
+
+  const processedCount = useMemo(
+    () => rows.filter((row) => row.status === "done" || row.status === "error").length,
+    [rows],
+  );
+  const failedCount = useMemo(() => rows.filter((row) => row.status === "error").length, [rows]);
+  const recognizedCount = useMemo(() => rows.filter((row) => row.status === "done").length, [rows]);
+  const totalLabel = pipelineCounterLabel(stage, rows.length, processedCount);
+  const busy = isProcessingStage(stage);
+
+  const clearCurrentRun = useCallback(() => {
+    runRef.current += 1;
+    if (abortRef.current) {
+      abortRef.current.abort();
+      abortRef.current = null;
+    }
+  }, []);
+
+  const resetPipeline = useCallback(() => {
+    clearCurrentRun();
+    setStage("idle");
+    setDragActive(false);
+    setFileName("");
+    setPreviewURL((current) => {
+      if (current) {
+        URL.revokeObjectURL(current);
+      }
+
+      return "";
+    });
+    setCapture(null);
+    setDetectedCount(null);
+    setRows([]);
+    setError("");
+    if (fileInputRef.current) {
+      fileInputRef.current.value = "";
+    }
+  }, [clearCurrentRun]);
+
+  useEffect(() => () => clearCurrentRun(), [clearCurrentRun]);
+
+  useEffect(
+    () => () => {
+      if (previewURL) {
+        URL.revokeObjectURL(previewURL);
+      }
+    },
+    [previewURL],
+  );
+
+  const startPipeline = useCallback(
+    async (file) => {
+      if (!file) {
+        return;
+      }
+
+      clearCurrentRun();
+      const runID = runRef.current;
+      const controller = new AbortController();
+      abortRef.current = controller;
+
+      setStage("uploading");
+      setFileName(file.name || "image");
+      setPreviewURL((current) => {
+        if (current) {
+          URL.revokeObjectURL(current);
+        }
+
+        return URL.createObjectURL(file);
+      });
+      setCapture(null);
+      setDetectedCount(null);
+      setRows([]);
+      setError("");
+
+      try {
+        const nextCapture = await uploadCapture(file, controller.signal);
+        if (runRef.current !== runID || controller.signal.aborted) {
+          return;
+        }
+        setCapture(nextCapture);
+        setStage("detecting");
+
+        const detection = await detectCapture(nextCapture.uuid, controller.signal);
+        if (runRef.current !== runID || controller.signal.aborted) {
+          return;
+        }
+
+        const boxes = detectionBoxes(detection);
+        setDetectedCount(boxes.length);
+        if (boxes.length === 0) {
+          setStage("complete");
+          return;
+        }
+
+        setStage("cropping");
+        const cropResponse = await createCrops(nextCapture.uuid, boxes, controller.signal);
+        if (runRef.current !== runID || controller.signal.aborted) {
+          return;
+        }
+
+        const cropRows = cropsToRows(cropResponse.crops).map((row) => ({ ...row, status: "running" }));
+        setRows(cropRows);
+        setStage("recognizing");
+
+        const batchItems = [];
+        await identifyCrops(
+          cropRows.map((row) => row.uuid),
+          controller.signal,
+          (item) => {
+            batchItems.push(item);
+            setRows((current) => mergeBatchRecognition(current, item));
+          },
+        );
+        if (runRef.current !== runID || controller.signal.aborted) {
+          return;
+        }
+        const recognizedRows = mergeBatchRecognitions(cropRows, batchItems);
+        const failures = recognizedRows.filter((row) => row.status === "error").length;
+        setRows(recognizedRows);
+
+        if (failures > 0) {
+          setError(`${failures} recognition${failures === 1 ? "" : "s"} failed`);
+          setStage("error");
+        } else {
+          setError("");
+          setStage("complete");
+        }
+      } catch (err) {
+        if (controller.signal.aborted || runRef.current !== runID) {
+          return;
+        }
+        setError(friendlyError(err));
+        setStage("error");
+      } finally {
+        if (runRef.current === runID) {
+          abortRef.current = null;
+        }
+      }
+    },
+    [clearCurrentRun],
+  );
+
+  const handleFileInput = useCallback(
+    (event) => {
+      const file = event.currentTarget.files?.[0];
+      startPipeline(file);
+    },
+    [startPipeline],
+  );
+
+  const handleDrop = useCallback(
+    (event) => {
+      event.preventDefault();
+      setDragActive(false);
+      if (busy) {
+        return;
+      }
+      startPipeline(event.dataTransfer.files?.[0]);
+    },
+    [busy, startPipeline],
+  );
+
+  const handleDragOver = useCallback(
+    (event) => {
+      event.preventDefault();
+      if (!busy) {
+        setDragActive(true);
+      }
+    },
+    [busy],
+  );
+
+  const handleDragLeave = useCallback((event) => {
+    if (event.currentTarget === event.target) {
+      setDragActive(false);
+    }
+  }, []);
+
+  return h(
+    "div",
+    { className: "workspace" },
+    h(Header, { section, totalLabel }),
+    h(
+      "main",
+      { className: "content add-content", "aria-label": "Add image pipeline" },
+      h(
+        "section",
+        { className: "add-panel" },
+        h(
+          "label",
+          {
+            className: [
+              "upload-frame",
+              dragActive ? "upload-frame-active" : "",
+              previewURL ? "upload-frame-preview" : "",
+              busy ? "upload-frame-busy" : "",
+            ]
+              .filter(Boolean)
+              .join(" "),
+            onDragLeave: handleDragLeave,
+            onDragOver: handleDragOver,
+            onDrop: handleDrop,
+          },
+          h("input", {
+            accept: "image/*",
+            disabled: busy,
+            onChange: handleFileInput,
+            ref: fileInputRef,
+            type: "file",
+          }),
+          previewURL
+            ? h("img", { alt: "Selected capture", className: "upload-preview", src: previewURL })
+            : h(
+                "div",
+                { className: "upload-empty" },
+                h("span", { className: "upload-plus", "aria-hidden": "true" }, "+"),
+                h("span", null, "Add image"),
+              ),
+          busy
+            ? h(
+                "div",
+                { className: "upload-overlay", role: "status" },
+                h(Spinner, null),
+                h("span", null, stageText(stage)),
+              )
+            : null,
+        ),
+        h(
+          "div",
+          { className: "pipeline-summary" },
+          h(
+            "div",
+            null,
+            h("p", { className: "summary-title" }, fileName || "Add image"),
+            h("p", { className: "summary-detail" }, pipelineSummary(stage, capture, rows.length, recognizedCount, failedCount)),
+          ),
+          capture || rows.length > 0 || stage === "error" || stage === "complete"
+            ? h("button", { className: "reset-button", type: "button", onClick: resetPipeline }, "New image")
+            : null,
+        ),
+        detectedCount !== null ? h("p", { className: "detected-count" }, formatDetectedCount(detectedCount)) : null,
+        error ? h("p", { className: "pipeline-error" }, error) : null,
+      ),
+      rows.length > 0
+        ? h(PipelineProgress, {
+            failedCount,
+            processedCount,
+            recognizedCount,
+            totalCount: rows.length,
+          })
+        : null,
+      rows.length > 0 ? h(PipelineTable, { rows }) : null,
+    ),
+    h(Footer),
+  );
+}
+
+function PipelineProgress({ failedCount, processedCount, recognizedCount, totalCount }) {
+  const percent = totalCount > 0 ? Math.round((processedCount / totalCount) * 100) : 0;
+
+  return h(
+    "section",
+    { className: "pipeline-progress-panel", "aria-label": "Recognition progress" },
+    h(
+      "div",
+      { className: "progress-header" },
+      h("span", null, "Gemini progress"),
+      h("span", null, `${processedCount}/${totalCount}`),
+    ),
+    h(
+      "div",
+      {
+        "aria-valuemax": totalCount,
+        "aria-valuemin": 0,
+        "aria-valuenow": processedCount,
+        className: "progress-track",
+        role: "progressbar",
+      },
+      h("div", { className: "progress-bar", style: { width: `${percent}%` } }),
+    ),
+    h(
+      "div",
+      { className: "progress-meta" },
+      h("span", null, `${recognizedCount} recognized`),
+      failedCount > 0 ? h("span", { className: "progress-failed" }, `${failedCount} failed`) : null,
+    ),
+  );
+}
+
+function PipelineTable({ rows }) {
+  return h(
+    "section",
+    { className: "pipeline-table-panel" },
+    h(
+      "div",
+      { className: "pipeline-table-wrap" },
+      h(
+        "table",
+        { className: "pipeline-table" },
+        h(
+          "thead",
+          null,
+          h(
+            "tr",
+            null,
+            h("th", { scope: "col" }, "Crop"),
+            h("th", { scope: "col" }, "Status"),
+            h("th", { scope: "col" }, "Beer"),
+            h("th", { scope: "col" }, "Brewery"),
+            h("th", { scope: "col" }, "Style"),
+            h("th", { scope: "col" }, "Country"),
+            h("th", { scope: "col" }, "ABV"),
+            h("th", { scope: "col" }, "Confidence"),
+            h("th", { scope: "col" }, "Model"),
+          ),
+        ),
+        h(
+          "tbody",
+          null,
+          rows.map((row) => h(PipelineRow, { key: row.uuid, row })),
+        ),
+      ),
+    ),
+  );
+}
+
+function PipelineRow({ row }) {
+  const recognition = row.recognition || {};
+  const result = recognition.result || {};
+
+  return h(
+    "tr",
+    null,
+    h(
+      "td",
+      { className: "crop-cell" },
+      h(
+        "div",
+        { className: "pipeline-crop" },
+        h("img", {
+          alt: `Crop ${row.index}`,
+          loading: "lazy",
+          src: row.imageUrl,
+        }),
+      ),
+    ),
+    h("td", null, h(RowStatus, { row, result })),
+    h("td", { className: "strong-cell" }, optionalText(result.beerName)),
+    h("td", null, optionalText(result.brewery)),
+    h("td", null, optionalText(result.style)),
+    h("td", null, optionalText(result.country)),
+    h("td", { className: "numeric-cell" }, formatABV(result.abv)),
+    h("td", { className: "numeric-cell" }, formatConfidence(result.confidence)),
+    h("td", { className: "model-cell", title: recognition.model || "" }, optionalText(recognition.model)),
+  );
+}
+
+function RowStatus({ row, result }) {
+  if (row.status === "done") {
+    return h(
+      "span",
+      { className: `status-pill ${statusClass(result.status)}` },
+      `${statusLabel(result.status)}${row.cached ? " cached" : ""}`,
+    );
+  }
+  if (row.status === "error") {
+    return h("span", { className: "row-error", title: row.error || "Recognition failed" }, "Failed");
+  }
+
+  return h(
+    "span",
+    { className: "row-waiting" },
+    h(Spinner, { small: true }),
+    row.status === "running" ? "Gemini" : "Queued",
+  );
+}
+
+function Spinner({ small }) {
+  return h("span", { className: small ? "spinner spinner-small" : "spinner", "aria-hidden": "true" });
+}
+
+async function uploadCapture(file, signal) {
+  const form = new FormData();
+  form.append("files", file, file.name || "capture");
+
+  const payload = await requestJSON("/api/v1/captures", {
+    body: form,
+    method: "POST",
+    signal,
+  });
+  const captures = Array.isArray(payload.captures) ? payload.captures : [];
+  if (!captures[0]?.uuid) {
+    throw new Error("Capture response is empty");
+  }
+
+  return captures[0];
+}
+
+async function detectCapture(uuid, signal) {
+  return requestJSON("/api/v1/detect", {
+    body: JSON.stringify({ uuid }),
+    headers: { "Content-Type": "application/json" },
+    method: "POST",
+    signal,
+  });
+}
+
+async function createCrops(uuid, boxes, signal) {
+  return requestJSON("/api/v1/crops", {
+    body: JSON.stringify({ uuid, boxes }),
+    headers: { "Content-Type": "application/json" },
+    method: "POST",
+    signal,
+  });
+}
+
+async function identifyCrops(uuids, signal, onItem) {
+  const response = await fetch("/api/v1/beer-labels/identify-batch", {
+    body: JSON.stringify({ uuids }),
+    headers: {
+      Accept: "application/x-ndjson",
+      "Content-Type": "application/json",
+    },
+    method: "POST",
+    signal,
+  });
+  if (!response.ok) {
+    let payload = null;
+    try {
+      payload = await response.json();
+    } catch (err) {
+      payload = null;
+    }
+    throw new Error(apiErrorMessage(payload, response.status));
+  }
+  if (!response.body?.getReader) {
+    throw new Error("Streaming response is unavailable");
+  }
+
+  await readNDJSON(response.body, onItem);
+}
+
+async function readNDJSON(body, onItem) {
+  const reader = body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) {
+      break;
+    }
+    buffer += decoder.decode(value, { stream: true });
+    const lines = buffer.split("\n");
+    buffer = lines.pop() || "";
+    lines.forEach((line) => emitNDJSONLine(line, onItem));
+  }
+
+  buffer += decoder.decode();
+  emitNDJSONLine(buffer, onItem);
+}
+
+function emitNDJSONLine(line, onItem) {
+  const trimmed = line.trim();
+  if (!trimmed) {
+    return;
+  }
+
+  onItem(JSON.parse(trimmed));
+}
+
+async function requestJSON(url, options) {
+  const { headers, ...rest } = options;
+  const response = await fetch(url, {
+    ...rest,
+    headers: { Accept: "application/json", ...(headers || {}) },
+  });
+  let payload = null;
+  try {
+    payload = await response.json();
+  } catch (err) {
+    if (response.ok) {
+      throw new Error("Response is not JSON");
+    }
+  }
+  if (!response.ok) {
+    throw new Error(apiErrorMessage(payload, response.status));
+  }
+
+  return payload;
+}
+
+function apiErrorMessage(payload, status) {
+  const apiError = payload?.error;
+  if (typeof apiError?.message === "string" && apiError.message.trim()) {
+    return apiError.message.trim();
+  }
+  if (typeof apiError?.code === "string" && apiError.code.trim()) {
+    return apiError.code.trim().replaceAll("_", " ");
+  }
+
+  return `HTTP ${status}`;
+}
+
+function detectionBoxes(payload) {
+  const images = Array.isArray(payload?.images) ? payload.images : [];
+  const boxes = [];
+
+  images.forEach((image) => {
+    const results = Array.isArray(image.results) ? image.results : [];
+    results.forEach((detection) => {
+      const box = detection.box || {};
+      const bbox = [box.x1, box.y1, box.x2, box.y2].map((value) => Number(value));
+      if (bbox.every(Number.isFinite) && bbox[2] > bbox[0] && bbox[3] > bbox[1]) {
+        boxes.push({
+          bbox,
+          confidence: Number.isFinite(detection.confidence) ? detection.confidence : 0,
+        });
+      }
+    });
+  });
+
+  return boxes;
+}
+
+function cropsToRows(crops) {
+  return (Array.isArray(crops) ? crops : []).map((crop, index) => ({
+    cached: false,
+    error: "",
+    imageUrl: `/api/v1/captures/${encodeURIComponent(crop.uuid)}/image`,
+    index: index + 1,
+    recognition: null,
+    status: "pending",
+    uuid: crop.uuid,
+  }));
+}
+
+function mergeBatchRecognitions(rows, items) {
+  const byUUID = new Map();
+  items.forEach((item) => {
+    if (typeof item.uuid === "string" && item.uuid.trim()) {
+      byUUID.set(item.uuid, item);
+    }
+  });
+
+  return rows.map((row) => {
+    const item = byUUID.get(row.uuid);
+    if (!item) {
+      return {
+        ...row,
+        error: "Recognition response is missing",
+        status: "error",
+      };
+    }
+    if (item.error) {
+      return {
+        ...row,
+        error: item.error.message || item.error.code || "Recognition failed",
+        status: "error",
+      };
+    }
+
+    return {
+      ...row,
+      cached: Boolean(item.recognition?.cached),
+      error: "",
+      recognition: item.recognition,
+      status: "done",
+    };
+  });
+}
+
+function mergeBatchRecognition(rows, item) {
+  return rows.map((row) => (row.uuid === item.uuid ? applyBatchRecognition(row, item) : row));
+}
+
+function applyBatchRecognition(row, item) {
+  if (item.error) {
+    return {
+      ...row,
+      error: item.error.message || item.error.code || "Recognition failed",
+      status: "error",
+    };
+  }
+
+  return {
+    ...row,
+    cached: Boolean(item.recognition?.cached),
+    error: "",
+    recognition: item.recognition,
+    status: "done",
+  };
+}
+
+function isProcessingStage(stage) {
+  return ["uploading", "detecting", "cropping", "recognizing"].includes(stage);
+}
+
+function stageText(stage) {
+  const labels = {
+    uploading: "Saving capture",
+    detecting: "Detecting beers",
+    cropping: "Creating crops",
+    recognizing: "Waiting for Gemini",
+  };
+
+  return labels[stage] || "Processing";
+}
+
+function pipelineCounterLabel(stage, totalCount, processedCount) {
+  if (stage === "idle") {
+    return "Ready";
+  }
+  if (stage === "recognizing" && totalCount > 0) {
+    return `${processedCount}/${totalCount}`;
+  }
+  if (stage === "complete") {
+    return totalCount > 0 ? "Complete" : "No detections";
+  }
+  if (stage === "error") {
+    return "Needs attention";
+  }
+
+  return stageText(stage);
+}
+
+function pipelineSummary(stage, capture, totalCount, recognizedCount, failedCount) {
+  if (stage === "idle") {
+    return "Workspace is empty";
+  }
+  if (stage === "uploading") {
+    return "Saving capture";
+  }
+  if (stage === "detecting") {
+    return capture?.uuid ? `Capture ${shortUUID(capture.uuid)}` : "Detecting beers";
+  }
+  if (stage === "cropping") {
+    return "Creating crops";
+  }
+  if (stage === "recognizing") {
+    return `${recognizedCount}/${totalCount} Gemini responses`;
+  }
+  if (stage === "complete") {
+    return totalCount > 0 ? `${recognizedCount} recognitions saved` : "No beers detected";
+  }
+  if (stage === "error") {
+    return failedCount > 0 ? `${failedCount} rows need attention` : "Pipeline stopped";
+  }
+
+  return "Ready";
+}
+
+function formatDetectedCount(count) {
+  return `${count} ${count === 1 ? "beer" : "beers"} detected`;
+}
+
+function friendlyError(err) {
+  if (err instanceof DOMException && err.name === "AbortError") {
+    return "Canceled";
+  }
+  if (err instanceof Error && err.message.trim()) {
+    return err.message.trim();
+  }
+
+  return "Request failed";
 }
 
 function GalleryWorkspace({ section }) {
@@ -252,7 +941,13 @@ function Sidebar({ activeSection, onNavigate }) {
         h(
           "a",
           {
-            className: activeSection === section.key ? "nav-item active" : "nav-item",
+            className: [
+              "nav-item",
+              section.key === "add" ? "add-nav" : "",
+              activeSection === section.key ? "active" : "",
+            ]
+              .filter(Boolean)
+              .join(" "),
             href: `#${section.key}`,
             key: section.key,
             onClick: () => onNavigate(section.key),
@@ -563,7 +1258,7 @@ function Footer() {
 function sectionFromHash() {
   const key = window.location.hash.replace(/^#/, "").trim();
 
-  return SECTIONS[key] ? key : "captures";
+  return SECTIONS[key] ? key : "add";
 }
 
 function formatTotal(count, section) {

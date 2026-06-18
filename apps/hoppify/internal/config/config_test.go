@@ -108,6 +108,18 @@ func assertBeerLabelConfig(t *testing.T, cfg Config) {
 	if cfg.BeerLabel.GeminiTimeout != 45*time.Second {
 		t.Fatalf("expected beer label gemini timeout 45s, got %s", cfg.BeerLabel.GeminiTimeout)
 	}
+	if cfg.BeerLabel.RecognitionConcurrency != 4 {
+		t.Fatalf("expected beer label recognition concurrency 4, got %d", cfg.BeerLabel.RecognitionConcurrency)
+	}
+	if cfg.BeerLabel.RecognitionRetries != 2 {
+		t.Fatalf("expected beer label recognition retries 2, got %d", cfg.BeerLabel.RecognitionRetries)
+	}
+	if cfg.BeerLabel.RecognitionRetryDelay != 250*time.Millisecond {
+		t.Fatalf("expected beer label recognition retry delay 250ms, got %s", cfg.BeerLabel.RecognitionRetryDelay)
+	}
+	if cfg.BeerLabel.RecognitionMaxBatchSize != 300 {
+		t.Fatalf("expected beer label recognition max batch size 300, got %d", cfg.BeerLabel.RecognitionMaxBatchSize)
+	}
 }
 
 func assertObservabilityConfig(t *testing.T, cfg Config) {
