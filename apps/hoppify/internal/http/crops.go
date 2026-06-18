@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 
+	capturemodel "github.com/chistopat/hoppify/internal/models/capture"
 	cropmodel "github.com/chistopat/hoppify/internal/models/crop"
 	cropservice "github.com/chistopat/hoppify/internal/service/crops"
 
@@ -13,6 +14,38 @@ import (
 
 type CropCreator interface {
 	CreateCrops(ctx context.Context, request cropmodel.Request) (cropmodel.Response, error)
+}
+
+type CropLister interface {
+	ListCrops(ctx context.Context, query capturemodel.ListQuery) (cropmodel.ListResponse, error)
+}
+
+func listCrops(service CropLister, log *zap.Logger) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if service == nil {
+			writeError(w, http.StatusInternalServerError, string(cropservice.InternalError), "internal server error")
+			return
+		}
+
+		query, ok := readCaptureListQuery(w, r)
+		if !ok {
+			return
+		}
+
+		loggerOrNop(log).Debug(
+			"list crops request accepted",
+			zap.Int("limit", query.Limit),
+			zap.Int("offset", query.Offset),
+		)
+		response, err := service.ListCrops(r.Context(), query)
+		if err != nil {
+			loggerOrNop(log).Error("list crops request failed", zap.Error(err))
+			writeCropError(w, err)
+			return
+		}
+
+		writeJSON(w, http.StatusOK, response)
+	}
 }
 
 func createCrops(service CropCreator, log *zap.Logger) http.HandlerFunc {

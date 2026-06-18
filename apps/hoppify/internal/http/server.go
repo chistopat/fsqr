@@ -27,6 +27,7 @@ type handlerConfig struct {
 	captureImageProvider CaptureImageProvider
 	detectService        DetectorService
 	cropService          CropCreator
+	cropLister           CropLister
 	beerLabelService     BeerLabelIdentifier
 	limits               capturemodel.Limits
 	log                  *zap.Logger
@@ -54,6 +55,9 @@ func WithDetectService(service DetectorService) HandlerOption {
 func WithCropService(service CropCreator) HandlerOption {
 	return func(cfg *handlerConfig) {
 		cfg.cropService = service
+		if lister, ok := service.(CropLister); ok {
+			cfg.cropLister = lister
+		}
 	}
 }
 
@@ -100,6 +104,7 @@ func NewHandler(options ...HandlerOption) http.Handler {
 	mux.HandleFunc("GET /api/v1/captures/{uuid}/image", serveCaptureImage(cfg.captureImageProvider, cfg.log))
 	mux.HandleFunc("POST /api/v1/captures", createCaptures(cfg.captureService, cfg.limits, cfg.log))
 	mux.HandleFunc("POST /api/v1/detect", detectObjects(cfg.detectService, cfg.limits, cfg.log))
+	mux.HandleFunc("GET /api/v1/crops", listCrops(cfg.cropLister, cfg.log))
 	mux.HandleFunc("POST /api/v1/crops", createCrops(cfg.cropService, cfg.log))
 	mux.HandleFunc("POST /api/v1/beer-labels/identify", identifyBeerLabel(cfg.beerLabelService, cfg.log))
 

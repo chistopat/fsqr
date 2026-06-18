@@ -117,6 +117,49 @@ func TestServiceReturnsNotFoundForMissingParent(t *testing.T) {
 	assertCropError(t, err, NotFound)
 }
 
+func TestServiceListsImageCrops(t *testing.T) {
+	t.Parallel()
+
+	parentID := uuid.MustParse(testParentUUID)
+	childID := uuid.MustParse("0190b67a-dc55-769d-9d2e-92d6d29af3c7")
+	repository := &fakeRepository{
+		parent: newParentRecord(parentID),
+		children: []capturemodel.Record{{
+			UUID: childID,
+			ParentUUID: uuid.NullUUID{
+				UUID:  parentID,
+				Valid: true,
+			},
+			Type:           capturemodel.TypeImageCrop,
+			Bucket:         "hoppify",
+			ObjectKey:      "captures/crops/" + testParentUUID + "/" + childID.String() + ".jpg",
+			ContentType:    capturemodel.ContentTypeJPEG,
+			SizeBytes:      456,
+			ChecksumSHA256: "checksum",
+			Metadata:       map[string]any{},
+		}},
+	}
+	service := newTestService(t, repository, &fakeStorage{})
+
+	response, err := service.ListCrops(context.Background(), capturemodel.ListQuery{Limit: 1})
+	if err != nil {
+		t.Fatalf("list crops: %v", err)
+	}
+
+	if repository.listQuery.Type != capturemodel.TypeImageCrop {
+		t.Fatalf("expected image_crop list query, got %#v", repository.listQuery)
+	}
+	if len(response.Crops) != 1 {
+		t.Fatalf("expected one crop, got %d", len(response.Crops))
+	}
+	if response.Crops[0].UUID != childID.String() {
+		t.Fatalf("expected crop uuid %q, got %q", childID.String(), response.Crops[0].UUID)
+	}
+	if response.Crops[0].ImageURL != "/api/v1/captures/"+childID.String()+"/image" {
+		t.Fatalf("unexpected image url: %q", response.Crops[0].ImageURL)
+	}
+}
+
 func newTestService(t *testing.T, repository Repository, storage ObjectStorage) *Service {
 	t.Helper()
 
@@ -172,9 +215,10 @@ func assertCropError(t *testing.T, err error, code ErrorCode) {
 }
 
 type fakeRepository struct {
-	parent   capturemodel.Record
-	children []capturemodel.Record
-	err      error
+	parent    capturemodel.Record
+	children  []capturemodel.Record
+	listQuery capturemodel.ListQuery
+	err       error
 }
 
 func (repo *fakeRepository) FindCaptureByUUID(_ context.Context, id uuid.UUID) (capturemodel.Record, error) {
@@ -215,6 +259,39 @@ func (repo *fakeRepository) InsertCaptures(_ context.Context, records []capturem
 	repo.children = append(repo.children, records...)
 
 	return nil
+}
+
+func (repo *fakeRepository) ListCaptures(
+	_ context.Context,
+	query capturemodel.ListQuery,
+) (capturemodel.ListResult, error) {
+	repo.listQuery = query
+	if repo.err != nil {
+		return capturemodel.ListResult{}, repo.err
+	}
+
+	records := make([]capturemodel.Record, 0, len(repo.children))
+	for index := range repo.children {
+		if query.Type == "" || repo.children[index].Type == query.Type {
+			records = append(records, repo.children[index])
+		}
+	}
+
+	limit := query.Limit
+	if limit <= 0 || limit > len(records) {
+		limit = len(records)
+	}
+	if query.Offset >= len(records) {
+		return capturemodel.ListResult{}, nil
+	}
+
+	records = records[query.Offset:]
+	hasMore := len(records) > limit
+	if hasMore {
+		records = records[:limit]
+	}
+
+	return capturemodel.ListResult{Records: records, HasMore: hasMore}, nil
 }
 
 type fakeStorage struct {

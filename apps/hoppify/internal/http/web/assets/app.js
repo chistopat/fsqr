@@ -2,49 +2,149 @@ const { useCallback, useEffect, useMemo, useRef, useState } = React;
 const h = React.createElement;
 const PAGE_SIZE = 30;
 
+const SECTIONS = {
+  captures: {
+    key: "captures",
+    label: "Captures",
+    title: "Captures",
+    counterLabel: "Loaded captures",
+    endpoint: "/api/v1/captures",
+    responseKey: "captures",
+    emptyText: "No captures yet",
+    endText: "End of captures",
+    itemAlt: "Capture image",
+    loadingText: "Loading captures...",
+    loadingMoreText: "Loading more captures...",
+    singular: "capture",
+    plural: "captures",
+    errorText: "Failed to load captures",
+    ariaLabel: "Captures",
+  },
+  crops: {
+    key: "crops",
+    label: "Crops",
+    title: "Crops",
+    counterLabel: "Loaded crops",
+    endpoint: "/api/v1/crops",
+    responseKey: "crops",
+    emptyText: "No crops yet",
+    endText: "End of crops",
+    itemAlt: "Crop image",
+    loadingText: "Loading crops...",
+    loadingMoreText: "Loading more crops...",
+    singular: "crop",
+    plural: "crops",
+    errorText: "Failed to load crops",
+    ariaLabel: "Crops",
+    gridClass: "crop-grid",
+    cardClass: "crop-card",
+  },
+};
+
 function App() {
-  const [captures, setCaptures] = useState([]);
+  const [activeSection, setActiveSection] = useState(sectionFromHash);
+  const section = SECTIONS[activeSection] || SECTIONS.captures;
+
+  useEffect(() => {
+    const onHashChange = () => setActiveSection(sectionFromHash());
+    window.addEventListener("hashchange", onHashChange);
+
+    return () => window.removeEventListener("hashchange", onHashChange);
+  }, []);
+
+  const handleNavigate = useCallback((sectionKey) => {
+    if (!SECTIONS[sectionKey]) {
+      return;
+    }
+
+    setActiveSection(sectionKey);
+  }, []);
+
+  return h(
+    "div",
+    { className: "app-shell" },
+    h(Sidebar, { activeSection, onNavigate: handleNavigate }),
+    h(GalleryWorkspace, { section }),
+  );
+}
+
+function GalleryWorkspace({ section }) {
+  const [items, setItems] = useState([]);
   const [offset, setOffset] = useState(0);
   const [hasMore, setHasMore] = useState(true);
   const [status, setStatus] = useState("idle");
   const [error, setError] = useState("");
   const loadingRef = useRef(false);
+  const requestRef = useRef(0);
   const sentinelRef = useRef(null);
 
-  const loadMore = useCallback(async () => {
-    if (loadingRef.current || !hasMore) {
-      return;
-    }
-
-    loadingRef.current = true;
-    setStatus(captures.length === 0 ? "loading" : "loading-more");
-    setError("");
-
-    try {
-      const response = await fetch(`/api/v1/captures?limit=${PAGE_SIZE}&offset=${offset}`, {
-        headers: { Accept: "application/json" },
-      });
-      if (!response.ok) {
-        throw new Error(`HTTP ${response.status}`);
+  const loadPage = useCallback(
+    async (targetOffset, append) => {
+      if (loadingRef.current) {
+        return;
+      }
+      if (append && !hasMore) {
+        return;
       }
 
-      const page = await response.json();
-      const items = Array.isArray(page.captures) ? page.captures : [];
-      setCaptures((current) => current.concat(items));
-      setHasMore(Boolean(page.hasMore));
-      setOffset(page.hasMore ? page.nextOffset : offset + items.length);
-      setStatus("ready");
-    } catch (err) {
-      setStatus("error");
-      setError(err instanceof Error ? err.message : "Failed to load captures");
-    } finally {
-      loadingRef.current = false;
-    }
-  }, [captures.length, hasMore, offset]);
+      loadingRef.current = true;
+      const requestID = requestRef.current + 1;
+      requestRef.current = requestID;
+      setStatus(append ? "loading-more" : "loading");
+      setError("");
+
+      try {
+        const response = await fetch(`${section.endpoint}?limit=${PAGE_SIZE}&offset=${targetOffset}`, {
+          headers: { Accept: "application/json" },
+        });
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}`);
+        }
+
+        const page = await response.json();
+        const pageItems = Array.isArray(page[section.responseKey]) ? page[section.responseKey] : [];
+        if (requestID !== requestRef.current) {
+          return;
+        }
+        setItems((current) => (append ? current.concat(pageItems) : pageItems));
+        setHasMore(Boolean(page.hasMore));
+        const fallbackOffset = targetOffset + pageItems.length;
+        const nextOffset = Number.isFinite(page.nextOffset) ? page.nextOffset : fallbackOffset;
+        setOffset(page.hasMore ? nextOffset : fallbackOffset);
+        setStatus("ready");
+      } catch (err) {
+        if (requestID !== requestRef.current) {
+          return;
+        }
+        setStatus("error");
+        setError(err instanceof Error ? err.message : section.errorText);
+      } finally {
+        if (requestID === requestRef.current) {
+          loadingRef.current = false;
+        }
+      }
+    },
+    [hasMore, section],
+  );
+
+  const loadFirstPage = useCallback(() => {
+    requestRef.current += 1;
+    loadingRef.current = false;
+    setItems([]);
+    setOffset(0);
+    setHasMore(true);
+    setStatus("idle");
+    setError("");
+    loadPage(0, false);
+  }, [loadPage]);
+
+  const loadMore = useCallback(() => {
+    loadPage(offset, true);
+  }, [loadPage, offset]);
 
   useEffect(() => {
-    loadMore();
-  }, []);
+    loadFirstPage();
+  }, [section.key]);
 
   useEffect(() => {
     const sentinel = sentinelRef.current;
@@ -65,43 +165,31 @@ function App() {
     return () => observer.disconnect();
   }, [loadMore]);
 
-  const totalLabel = useMemo(() => {
-    if (captures.length === 0) {
-      return "No captures";
-    }
-    if (captures.length === 1) {
-      return "1 capture";
-    }
-
-    return `${captures.length} captures`;
-  }, [captures.length]);
+  const totalLabel = useMemo(() => formatTotal(items.length, section), [items.length, section]);
 
   return h(
     "div",
-    { className: "app-shell" },
-    h(Sidebar),
+    { className: "workspace" },
+    h(Header, { section, totalLabel }),
     h(
-      "div",
-      { className: "workspace" },
-      h(Header, { totalLabel }),
-      h(
-        "main",
-        { className: "content", "aria-label": "Captures" },
-        h(CaptureGallery, {
-          captures,
-          error,
-          hasMore,
-          onRetry: loadMore,
-          sentinelRef,
-          status,
-        }),
-      ),
-      h(Footer),
+      "main",
+      { className: "content", "aria-label": section.ariaLabel },
+      h(Gallery, {
+        error,
+        hasMore,
+        items,
+        onLoadMore: loadMore,
+        onRetry: items.length === 0 ? loadFirstPage : loadMore,
+        section,
+        sentinelRef,
+        status,
+      }),
     ),
+    h(Footer),
   );
 }
 
-function Sidebar() {
+function Sidebar({ activeSection, onNavigate }) {
   return h(
     "aside",
     { className: "sidebar", "aria-label": "Main navigation" },
@@ -109,17 +197,24 @@ function Sidebar() {
     h(
       "nav",
       { className: "nav-list" },
-      h(
-        "a",
-        { className: "nav-item active", href: "/" },
-        h("span", { className: "nav-icon", "aria-hidden": "true" }),
-        h("span", null, "Captures"),
+      Object.values(SECTIONS).map((section) =>
+        h(
+          "a",
+          {
+            className: activeSection === section.key ? "nav-item active" : "nav-item",
+            href: `#${section.key}`,
+            key: section.key,
+            onClick: () => onNavigate(section.key),
+          },
+          h("span", { className: `nav-icon ${section.key}-icon`, "aria-hidden": "true" }),
+          h("span", null, section.label),
+        ),
       ),
     ),
   );
 }
 
-function Header({ totalLabel }) {
+function Header({ section, totalLabel }) {
   return h(
     "header",
     { className: "topbar" },
@@ -127,28 +222,28 @@ function Header({ totalLabel }) {
       "div",
       null,
       h("p", { className: "section-kicker" }, "Gallery"),
-      h("h1", null, "Captures"),
+      h("h1", null, section.title),
     ),
-    h("div", { className: "counter", "aria-label": "Loaded captures" }, totalLabel),
+    h("div", { className: "counter", "aria-label": section.counterLabel }, totalLabel),
   );
 }
 
-function CaptureGallery({ captures, error, hasMore, onRetry, sentinelRef, status }) {
-  if (status === "loading" && captures.length === 0) {
-    return h("div", { className: "state" }, "Loading captures...");
+function Gallery({ error, hasMore, items, onLoadMore, onRetry, section, sentinelRef, status }) {
+  if (status === "loading" && items.length === 0) {
+    return h("div", { className: "state" }, section.loadingText);
   }
 
-  if (status === "error" && captures.length === 0) {
+  if (status === "error" && items.length === 0) {
     return h(
       "div",
       { className: "state error-state" },
-      h("span", null, error || "Failed to load captures"),
+      h("span", null, error || section.errorText),
       h("button", { type: "button", onClick: onRetry }, "Retry"),
     );
   }
 
-  if (captures.length === 0) {
-    return h("div", { className: "state" }, "No captures yet");
+  if (items.length === 0) {
+    return h("div", { className: "state" }, section.emptyText);
   }
 
   return h(
@@ -156,41 +251,46 @@ function CaptureGallery({ captures, error, hasMore, onRetry, sentinelRef, status
     null,
     h(
       "section",
-      { className: "gallery-grid" },
-      captures.map((capture) => h(CaptureCard, { capture, key: capture.uuid })),
+      { className: section.gridClass ? `gallery-grid ${section.gridClass}` : "gallery-grid" },
+      items.map((item) => h(GalleryCard, { item, key: item.uuid, section })),
     ),
     h(
       "div",
       { className: "scroll-status", ref: sentinelRef },
-      status === "loading-more" ? "Loading more..." : hasMore ? "" : "End of captures",
+      status === "loading-more"
+        ? section.loadingMoreText
+        : hasMore
+          ? h("button", { type: "button", onClick: onLoadMore }, "Load more")
+          : section.endText,
     ),
     status === "error"
       ? h(
           "div",
           { className: "inline-error" },
-          h("span", null, error || "Failed to load captures"),
+          h("span", null, error || section.errorText),
           h("button", { type: "button", onClick: onRetry }, "Retry"),
         )
       : null,
   );
 }
 
-function CaptureCard({ capture }) {
-  const dimensions = capture.width && capture.height ? `${capture.width}x${capture.height}` : "";
-  const size = formatBytes(capture.sizeBytes);
-  const capturedAt = formatDate(capture.createdAt);
-  const title = capturedAt === "Unknown" ? "Capture" : capturedAt;
+function GalleryCard({ item, section }) {
+  const dimensions = item.width && item.height ? `${item.width}x${item.height}` : "";
+  const size = formatBytes(item.sizeBytes);
+  const capturedAt = formatDate(item.createdAt);
+  const title = capturedAt === "Unknown" ? section.singularTitle || section.singular : capturedAt;
+  const cardClass = section.cardClass ? `capture-card ${section.cardClass}` : "capture-card";
 
   return h(
     "article",
-    { className: "capture-card" },
+    { className: cardClass },
     h(
       "div",
       { className: "thumb" },
       h("img", {
-        alt: "Capture image",
+        alt: section.itemAlt,
         loading: "lazy",
-        src: capture.imageUrl,
+        src: item.imageUrl,
       }),
     ),
     h(
@@ -214,6 +314,23 @@ function Footer() {
     h("span", null, "Hoppify"),
     h("a", { href: "/swagger" }, "API docs"),
   );
+}
+
+function sectionFromHash() {
+  const key = window.location.hash.replace(/^#/, "").trim();
+
+  return SECTIONS[key] ? key : "captures";
+}
+
+function formatTotal(count, section) {
+  if (count === 0) {
+    return `No ${section.plural}`;
+  }
+  if (count === 1) {
+    return `1 ${section.singular}`;
+  }
+
+  return `${count} ${section.plural}`;
 }
 
 function formatDate(value) {

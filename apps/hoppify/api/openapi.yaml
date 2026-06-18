@@ -253,6 +253,46 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
   /api/v1/crops:
+    get:
+      summary: List image crops
+      description: Returns stored crop captures ordered from newest to oldest.
+      parameters:
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 30
+          description: Maximum number of crops to return.
+        - name: offset
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 0
+            default: 0
+          description: Number of crops to skip.
+      responses:
+        "200":
+          description: Crops were listed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CropListResponse"
+        "400":
+          description: Invalid pagination query
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          description: Internal error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
     post:
       summary: Create image crops from known bounding boxes
       description: >
@@ -884,6 +924,30 @@ components:
         - hasMore
       properties:
         captures:
+          type: array
+          items:
+            $ref: "#/components/schemas/CaptureListItem"
+        limit:
+          type: integer
+          example: 30
+        offset:
+          type: integer
+          example: 0
+        nextOffset:
+          type: integer
+          example: 30
+        hasMore:
+          type: boolean
+          example: true
+    CropListResponse:
+      type: object
+      required:
+        - crops
+        - limit
+        - offset
+        - hasMore
+      properties:
+        crops:
           type: array
           items:
             $ref: "#/components/schemas/CaptureListItem"

@@ -22,6 +22,8 @@ const (
 	defaultMaxObjectBytes = 15 * 1024 * 1024
 	defaultJPEGQuality    = 95
 	defaultMaxBoxes       = 300
+	defaultListLimit      = 30
+	maxListLimit          = 100
 	cropNamespace         = "60c4f4c9-4c4c-4115-8914-9c1d7fe4a49e"
 )
 
@@ -29,6 +31,7 @@ type Repository interface {
 	FindCaptureByUUID(ctx context.Context, id uuid.UUID) (capturemodel.Record, error)
 	FindCapturesByParentUUID(ctx context.Context, parentID uuid.UUID) ([]capturemodel.Record, error)
 	InsertCaptures(ctx context.Context, records []capturemodel.Record) error
+	ListCaptures(ctx context.Context, query capturemodel.ListQuery) (capturemodel.ListResult, error)
 }
 
 type ObjectStorage interface {
@@ -128,6 +131,21 @@ func (svc *Service) CreateCrops(ctx context.Context, request cropmodel.Request) 
 	}
 
 	return buildResponse(parentID, specs, records)
+}
+
+func (svc *Service) ListCrops(
+	ctx context.Context,
+	query capturemodel.ListQuery,
+) (cropmodel.ListResponse, error) {
+	query = normalizeListQuery(query)
+	query.Type = capturemodel.TypeImageCrop
+
+	result, err := svc.repository.ListCaptures(ctx, query)
+	if err != nil {
+		return cropmodel.ListResponse{}, newError(InternalError, "internal server error", err)
+	}
+
+	return cropmodel.ListResponseFromRecords(result.Records, query, result.HasMore), nil
 }
 
 func (svc *Service) cropSpecs(
@@ -279,6 +297,20 @@ func specsExist(specs []cropSpec, records []capturemodel.Record) bool {
 
 func cropObjectKey(parentID, cropID uuid.UUID) string {
 	return fmt.Sprintf("captures/crops/%s/%s.jpg", parentID.String(), cropID.String())
+}
+
+func normalizeListQuery(query capturemodel.ListQuery) capturemodel.ListQuery {
+	if query.Limit <= 0 {
+		query.Limit = defaultListLimit
+	}
+	if query.Limit > maxListLimit {
+		query.Limit = maxListLimit
+	}
+	if query.Offset < 0 {
+		query.Offset = 0
+	}
+
+	return query
 }
 
 func cropRect(bounds image.Rectangle, bbox []float64) (image.Rectangle, error) {

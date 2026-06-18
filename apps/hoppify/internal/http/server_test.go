@@ -481,6 +481,60 @@ func TestCreateCropsAcceptsUUIDAndBoxes(t *testing.T) {
 	}
 }
 
+func TestListCropsReturnsPagedGallery(t *testing.T) {
+	t.Parallel()
+
+	createdAt := time.Date(2026, 6, 18, 12, 45, 0, 0, time.UTC)
+	service := &fakeCropService{listResponse: cropmodel.ListResponse{
+		Crops: []capturemodel.ListItem{{
+			UUID:      "0190b67a-dc55-769d-9d2e-92d6d29af3c7",
+			Type:      "image_crop",
+			URI:       "s3://hoppify/captures/crops/parent/0190b67a-dc55-769d-9d2e-92d6d29af3c7.jpg",
+			ImageURL:  "/api/v1/captures/0190b67a-dc55-769d-9d2e-92d6d29af3c7/image",
+			CreatedAt: createdAt,
+			SizeBytes: 456,
+			Width:     120,
+			Height:    320,
+		}},
+		Limit:      2,
+		Offset:     4,
+		NextOffset: 5,
+		HasMore:    true,
+	}}
+	handler := NewHandler(WithCropService(service))
+	request := httptest.NewRequest(http.MethodGet, "/api/v1/crops?limit=2&offset=4", nil)
+	response := httptest.NewRecorder()
+
+	handler.ServeHTTP(response, request)
+
+	if response.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d with body %q", http.StatusOK, response.Code, response.Body.String())
+	}
+	if service.listQuery != (capturemodel.ListQuery{Limit: 2, Offset: 4}) {
+		t.Fatalf("unexpected list query: %#v", service.listQuery)
+	}
+
+	var body cropmodel.ListResponse
+	if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if len(body.Crops) != 1 || body.Crops[0].ImageURL == "" || !body.HasMore {
+		t.Fatalf("unexpected crop list response: %#v", body)
+	}
+}
+
+func TestListCropsRejectsInvalidQuery(t *testing.T) {
+	t.Parallel()
+
+	handler := NewHandler(WithCropService(&fakeCropService{}))
+	request := httptest.NewRequest(http.MethodGet, "/api/v1/crops?limit=0", nil)
+	response := httptest.NewRecorder()
+
+	handler.ServeHTTP(response, request)
+
+	assertAPIError(t, response, http.StatusBadRequest, string(cropservice.InvalidRequest))
+}
+
 func TestCreateCropsRejectsUnknownRequestFields(t *testing.T) {
 	t.Parallel()
 
@@ -712,9 +766,11 @@ type fakeDetectService struct {
 }
 
 type fakeCropService struct {
-	response cropmodel.Response
-	request  cropmodel.Request
-	err      error
+	response     cropmodel.Response
+	request      cropmodel.Request
+	listResponse cropmodel.ListResponse
+	listQuery    capturemodel.ListQuery
+	err          error
 }
 
 type fakeBeerLabelService struct {
@@ -749,6 +805,18 @@ func (service *fakeCropService) CreateCrops(
 	}
 
 	return service.response, nil
+}
+
+func (service *fakeCropService) ListCrops(
+	_ context.Context,
+	query capturemodel.ListQuery,
+) (cropmodel.ListResponse, error) {
+	service.listQuery = query
+	if service.err != nil {
+		return cropmodel.ListResponse{}, service.err
+	}
+
+	return service.listResponse, nil
 }
 
 func (service *fakeBeerLabelService) Identify(

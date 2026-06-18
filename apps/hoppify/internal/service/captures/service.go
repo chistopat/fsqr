@@ -123,6 +123,7 @@ func (svc *Service) ListCaptures(
 	query capturemodel.ListQuery,
 ) (capturemodel.ListResponse, error) {
 	query = normalizeListQuery(query)
+	query.Type = capturemodel.TypeImage
 
 	result, err := svc.repository.ListCaptures(ctx, query)
 	if err != nil {

@@ -181,10 +181,16 @@ func (repo *Repository) ListCaptures(
 	query capturemodel.ListQuery,
 ) (capturemodel.ListResult, error) {
 	started := time.Now()
+	captureType := query.Type
+	if captureType == "" {
+		captureType = capturemodel.TypeImage
+	}
+
 	repo.log.Debug(
 		"pg list captures started",
 		zap.Int("limit", query.Limit),
 		zap.Int("offset", query.Offset),
+		zap.String("type", captureType),
 	)
 
 	rows, err := repo.db.QueryContext(
@@ -203,7 +209,7 @@ func (repo *Repository) ListCaptures(
 		WHERE type = $1
 		ORDER BY created_at DESC, uuid DESC
 		LIMIT $2 OFFSET $3`,
-		capturemodel.TypeImage,
+		captureType,
 		query.Limit+1,
 		query.Offset,
 	)

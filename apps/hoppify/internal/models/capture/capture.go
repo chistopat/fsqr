@@ -64,6 +64,7 @@ type CapturesResponse struct {
 type ListQuery struct {
 	Limit  int
 	Offset int
+	Type   string
 }
 
 type ListResult struct {

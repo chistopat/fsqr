@@ -115,6 +115,11 @@ button:hover {
   background: rgba(255, 255, 255, 0.10);
 }
 
+.nav-item:hover {
+  color: #ffffff;
+  background: rgba(255, 255, 255, 0.08);
+}
+
 .nav-icon {
   width: 16px;
   height: 16px;
@@ -123,6 +128,13 @@ button:hover {
   box-shadow:
     8px 0 0 -5px currentColor,
     0 8px 0 -5px currentColor;
+}
+
+.crops-icon {
+  border-radius: 50%;
+  box-shadow:
+    0 -7px 0 -5px currentColor,
+    0 7px 0 -5px currentColor;
 }
 
 .workspace {
@@ -193,6 +205,10 @@ h1 {
   align-items: start;
 }
 
+.crop-grid {
+  grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
+}
+
 .capture-card {
   overflow: hidden;
   border: 1px solid var(--line);
@@ -206,6 +222,10 @@ h1 {
   aspect-ratio: 4 / 3;
   place-items: center;
   background: #0d1117;
+}
+
+.crop-card .thumb {
+  aspect-ratio: 3 / 4;
 }
 
 .thumb img {
