@@ -31,7 +31,8 @@ RUN apt-get update \
 WORKDIR /out
 
 RUN mkdir -p models \
-    && curl -fsSL --retry 3 --retry-delay 2 -o models/sku110k-yolo11-s640.onnx "${MODEL_URL}" \
+    && curl --http1.1 -fsSL --retry 5 --retry-all-errors --retry-delay 2 \
+        -o models/sku110k-yolo11-s640.onnx "${MODEL_URL}" \
     && echo "${MODEL_SHA256}  models/sku110k-yolo11-s640.onnx" | sha256sum -c -
 
 RUN case "${TARGETARCH}" in \
@@ -39,7 +40,7 @@ RUN case "${TARGETARCH}" in \
         arm64) ort_arch=aarch64 ;; \
         *) echo "unsupported TARGETARCH=${TARGETARCH}" >&2; exit 1 ;; \
     esac \
-    && curl -fsSL --retry 3 --retry-delay 2 -o onnxruntime.tgz \
+    && curl --http1.1 -fsSL --retry 5 --retry-all-errors --retry-delay 2 -o onnxruntime.tgz \
         "https://github.com/microsoft/onnxruntime/releases/download/v${ONNXRUNTIME_VERSION}/onnxruntime-linux-${ort_arch}-${ONNXRUNTIME_VERSION}.tgz" \
     && mkdir -p lib \
     && tar -xzf onnxruntime.tgz --strip-components=2 -C lib \
