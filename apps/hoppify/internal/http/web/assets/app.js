@@ -92,6 +92,7 @@ function GalleryWorkspace({ section }) {
   const [hasMore, setHasMore] = useState(true);
   const [status, setStatus] = useState("idle");
   const [error, setError] = useState("");
+  const [selectedItem, setSelectedItem] = useState(null);
   const loadingRef = useRef(false);
   const requestRef = useRef(0);
   const sentinelRef = useRef(null);
@@ -162,6 +163,7 @@ function GalleryWorkspace({ section }) {
 
   useEffect(() => {
     loadFirstPage();
+    setSelectedItem(null);
   }, [section.key]);
 
   useEffect(() => {
@@ -184,6 +186,16 @@ function GalleryWorkspace({ section }) {
   }, [loadMore]);
 
   const totalLabel = useMemo(() => formatTotal(items.length, section), [items.length, section]);
+  const previewItem = section.key === "crops" ? selectedItem : null;
+  const handlePreview = useCallback(
+    (item) => {
+      if (section.key === "crops") {
+        setSelectedItem(item);
+      }
+    },
+    [section.key],
+  );
+  const handleClosePreview = useCallback(() => setSelectedItem(null), []);
 
   return h(
     "div",
@@ -191,28 +203,38 @@ function GalleryWorkspace({ section }) {
     h(Header, { section, totalLabel }),
     h(
       "main",
-      { className: "content", "aria-label": section.ariaLabel },
-      section.view === "recognitions"
-        ? h(RecognitionTable, {
-            error,
-            hasMore,
-            items,
-            onLoadMore: loadMore,
-            onRetry: items.length === 0 ? loadFirstPage : loadMore,
-            section,
-            sentinelRef,
-            status,
-          })
-        : h(Gallery, {
-            error,
-            hasMore,
-            items,
-            onLoadMore: loadMore,
-            onRetry: items.length === 0 ? loadFirstPage : loadMore,
-            section,
-            sentinelRef,
-            status,
-          }),
+      {
+        className: previewItem ? "content content-with-preview" : "content",
+        "aria-label": section.ariaLabel,
+      },
+      h(
+        "div",
+        { className: "content-primary" },
+        section.view === "recognitions"
+          ? h(RecognitionTable, {
+              error,
+              hasMore,
+              items,
+              onLoadMore: loadMore,
+              onRetry: items.length === 0 ? loadFirstPage : loadMore,
+              section,
+              sentinelRef,
+              status,
+            })
+          : h(Gallery, {
+              error,
+              hasMore,
+              items,
+              onLoadMore: loadMore,
+              onPreview: handlePreview,
+              onRetry: items.length === 0 ? loadFirstPage : loadMore,
+              previewItem,
+              section,
+              sentinelRef,
+              status,
+            }),
+      ),
+      previewItem ? h(CropPreviewPanel, { item: previewItem, onClose: handleClosePreview }) : null,
     ),
     h(Footer),
   );
@@ -257,7 +279,18 @@ function Header({ section, totalLabel }) {
   );
 }
 
-function Gallery({ error, hasMore, items, onLoadMore, onRetry, section, sentinelRef, status }) {
+function Gallery({
+  error,
+  hasMore,
+  items,
+  onLoadMore,
+  onPreview,
+  onRetry,
+  previewItem,
+  section,
+  sentinelRef,
+  status,
+}) {
   if (status === "loading" && items.length === 0) {
     return h("div", { className: "state" }, section.loadingText);
   }
@@ -281,7 +314,15 @@ function Gallery({ error, hasMore, items, onLoadMore, onRetry, section, sentinel
     h(
       "section",
       { className: section.gridClass ? `gallery-grid ${section.gridClass}` : "gallery-grid" },
-      items.map((item) => h(GalleryCard, { item, key: item.uuid, section })),
+      items.map((item) =>
+        h(GalleryCard, {
+          active: previewItem?.uuid === item.uuid,
+          item,
+          key: item.uuid,
+          onPreview,
+          section,
+        }),
+      ),
     ),
     h(
       "div",
@@ -419,16 +460,28 @@ function RecognitionRow({ item }) {
   );
 }
 
-function GalleryCard({ item, section }) {
+function GalleryCard({ active, item, onPreview, section }) {
   const dimensions = item.width && item.height ? `${item.width}x${item.height}` : "";
   const size = formatBytes(item.sizeBytes);
   const capturedAt = formatDate(item.createdAt);
   const title = capturedAt === "Unknown" ? section.singularTitle || section.singular : capturedAt;
   const cardClass = section.cardClass ? `capture-card ${section.cardClass}` : "capture-card";
+  const clickable = typeof onPreview === "function" && section.key === "crops";
+  const fullCardClass = [cardClass, clickable ? "clickable-card" : "", active ? "active-card" : ""]
+    .filter(Boolean)
+    .join(" ");
+  const cardProps = {
+    className: fullCardClass,
+  };
+  if (clickable) {
+    cardProps.type = "button";
+    cardProps.onClick = () => onPreview(item);
+    cardProps["aria-label"] = `Open crop preview ${dimensions || item.uuid}`;
+  }
 
   return h(
-    "article",
-    { className: cardClass },
+    clickable ? "button" : "article",
+    cardProps,
     h(
       "div",
       { className: "thumb" },
@@ -445,9 +498,55 @@ function GalleryCard({ item, section }) {
       h(
         "dl",
         { className: "metadata" },
-        dimensions ? h("div", null, h("dt", null, "Size"), h("dd", null, dimensions)) : null,
+        dimensions ? h("div", null, h("dt", null, "Pixels"), h("dd", null, dimensions)) : null,
         size ? h("div", null, h("dt", null, "File"), h("dd", null, size)) : null,
       ),
+    ),
+  );
+}
+
+function CropPreviewPanel({ item, onClose }) {
+  const dimensions = item.width && item.height ? `${item.width}x${item.height}` : "-";
+  const size = formatBytes(item.sizeBytes) || "-";
+
+  return h(
+    "aside",
+    { className: "preview-panel", "aria-label": "Crop preview" },
+    h(
+      "div",
+      { className: "preview-header" },
+      h(
+        "div",
+        null,
+        h("p", { className: "section-kicker" }, "Preview"),
+        h("h2", null, "Crop"),
+      ),
+      h(
+        "button",
+        { className: "icon-button", type: "button", onClick: onClose, "aria-label": "Close preview" },
+        "X",
+      ),
+    ),
+    h(
+      "div",
+      { className: "preview-image" },
+      h("img", {
+        alt: "Selected crop",
+        src: item.imageUrl,
+      }),
+    ),
+    h(
+      "dl",
+      { className: "metadata preview-metadata" },
+      h("div", null, h("dt", null, "Pixels"), h("dd", null, dimensions)),
+      h("div", null, h("dt", null, "File"), h("dd", null, size)),
+      h("div", null, h("dt", null, "Created"), h("dd", null, formatDate(item.createdAt))),
+      h("div", null, h("dt", null, "UUID"), h("dd", { title: item.uuid }, shortUUID(item.uuid))),
+    ),
+    h(
+      "a",
+      { className: "preview-link", href: item.imageUrl, target: "_blank", rel: "noreferrer" },
+      "Open image",
     ),
   );
 }
@@ -508,6 +607,14 @@ function formatBytes(value) {
   }
 
   return `${size.toFixed(unit === 0 ? 0 : 1)} ${units[unit]}`;
+}
+
+function shortUUID(value) {
+  if (typeof value !== "string" || value.length <= 12) {
+    return value || "-";
+  }
+
+  return `${value.slice(0, 8)}...${value.slice(-4)}`;
 }
 
 function optionalText(value) {
