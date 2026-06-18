@@ -1,23 +1,20 @@
 package detect
 
 import (
-	"bytes"
 	"context"
 	"errors"
 	"fmt"
 	"image"
-	_ "image/jpeg"
-	_ "image/png"
 	"mime"
 	"strings"
 	"time"
 
+	"github.com/chistopat/hoppify/internal/imageutil"
 	capturemodel "github.com/chistopat/hoppify/internal/models/capture"
 	detectionmodel "github.com/chistopat/hoppify/internal/models/detection"
 	"github.com/chistopat/hoppify/internal/service/imagesource"
 
 	"github.com/google/uuid"
-	_ "golang.org/x/image/webp"
 )
 
 const defaultMaxObjectBytes = 15 * 1024 * 1024
@@ -194,9 +191,9 @@ func (svc *Service) resolveFileSource(file *capturemodel.UploadFile) (imageSourc
 }
 
 func decodeImage(body []byte) (image.Image, error) {
-	img, _, err := image.Decode(bytes.NewReader(body))
+	img, _, err := imageutil.DecodeOriented(body)
 	if err != nil {
-		return nil, fmt.Errorf("decode image: %w", err)
+		return nil, err
 	}
 
 	return img, nil

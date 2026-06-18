@@ -218,6 +218,9 @@ h1 {
 }
 
 .capture-card {
+  display: grid;
+  height: 100%;
+  grid-template-rows: auto 1fr;
   overflow: hidden;
   border: 1px solid var(--line);
   border-radius: 8px;
@@ -233,7 +236,7 @@ h1 {
 }
 
 .crop-card .thumb {
-  aspect-ratio: 3 / 4;
+  aspect-ratio: 1 / 1;
 }
 
 .thumb img {
@@ -246,6 +249,8 @@ h1 {
 .card-body {
   display: grid;
   gap: 12px;
+  min-height: 104px;
+  align-content: start;
   padding: 13px;
 }
 

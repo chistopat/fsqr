@@ -12,6 +12,7 @@ import (
 	"image/jpeg"
 	"math"
 
+	"github.com/chistopat/hoppify/internal/imageutil"
 	capturemodel "github.com/chistopat/hoppify/internal/models/capture"
 	cropmodel "github.com/chistopat/hoppify/internal/models/crop"
 
@@ -357,9 +358,9 @@ func encodeCropJPEG(img image.Image, rect image.Rectangle, quality int) ([]byte,
 }
 
 func decodeImage(body []byte) (image.Image, error) {
-	img, _, err := image.Decode(bytes.NewReader(body))
+	img, _, err := imageutil.DecodeOriented(body)
 	if err != nil {
-		return nil, fmt.Errorf("decode image: %w", err)
+		return nil, err
 	}
 
 	return img, nil
