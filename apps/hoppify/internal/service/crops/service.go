@@ -360,7 +360,7 @@ func encodeCropJPEG(img image.Image, rect image.Rectangle, quality int) ([]byte,
 func decodeImage(body []byte) (image.Image, error) {
 	img, _, err := imageutil.DecodeOriented(body)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("decode oriented image: %w", err)
 	}
 
 	return img, nil

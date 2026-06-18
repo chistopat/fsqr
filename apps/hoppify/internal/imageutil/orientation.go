@@ -69,7 +69,7 @@ func exifOrientation(body []byte) int {
 	return orientation
 }
 
-func orientedDimensions(width, height, orientation int) (int, int) {
+func orientedDimensions(width, height, orientation int) (orientedWidth, orientedHeight int) {
 	switch orientation {
 	case orientationTranspose, orientationRotate90, orientationTransverse, orientationRotate270:
 		return height, width
@@ -78,7 +78,7 @@ func orientedDimensions(width, height, orientation int) (int, int) {
 	}
 }
 
-func orientedPoint(x, y, width, height, orientation int) (int, int) {
+func orientedPoint(x, y, width, height, orientation int) (dstX, dstY int) {
 	switch orientation {
 	case orientationFlipH:
 		return width - 1 - x, y
