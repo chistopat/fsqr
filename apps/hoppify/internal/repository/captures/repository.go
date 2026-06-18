@@ -81,7 +81,8 @@ func (repo *Repository) FindCaptureByUUID(ctx context.Context, id uuid.UUID) (ca
 			content_type,
 			size_bytes,
 			checksum_sha256,
-			metadata
+			metadata,
+			created_at
 		FROM captures
 		WHERE uuid = $1`,
 		id.String(),
@@ -95,6 +96,7 @@ func (repo *Repository) FindCaptureByUUID(ctx context.Context, id uuid.UUID) (ca
 		&record.SizeBytes,
 		&record.ChecksumSHA256,
 		&metadata,
+		&record.CreatedAt,
 	)
 	if errors.Is(err, sql.ErrNoRows) {
 		repo.log.Debug("pg find capture not found", zap.String("uuid", id.String()))
@@ -135,7 +137,8 @@ func (repo *Repository) FindCapturesByParentUUID(
 			content_type,
 			size_bytes,
 			checksum_sha256,
-			metadata
+			metadata,
+			created_at
 		FROM captures
 		WHERE parent_uuid = $1
 		ORDER BY object_key`,
@@ -171,6 +174,74 @@ func (repo *Repository) FindCapturesByParentUUID(
 	)
 
 	return records, nil
+}
+
+func (repo *Repository) ListCaptures(
+	ctx context.Context,
+	query capturemodel.ListQuery,
+) (capturemodel.ListResult, error) {
+	started := time.Now()
+	repo.log.Debug(
+		"pg list captures started",
+		zap.Int("limit", query.Limit),
+		zap.Int("offset", query.Offset),
+	)
+
+	rows, err := repo.db.QueryContext(
+		ctx,
+		`SELECT uuid,
+			parent_uuid,
+			type,
+			bucket,
+			object_key,
+			content_type,
+			size_bytes,
+			checksum_sha256,
+			metadata,
+			created_at
+		FROM captures
+		WHERE type = $1
+		ORDER BY created_at DESC, uuid DESC
+		LIMIT $2 OFFSET $3`,
+		capturemodel.TypeImage,
+		query.Limit+1,
+		query.Offset,
+	)
+	if err != nil {
+		repo.log.Error("pg list captures failed", zap.Error(err), zap.Duration("duration", time.Since(started)))
+		return capturemodel.ListResult{}, fmt.Errorf("query captures: %w", err)
+	}
+	defer func() {
+		_ = rows.Close()
+	}()
+
+	records := make([]capturemodel.Record, 0, query.Limit+1)
+	for rows.Next() {
+		record, err := scanCapture(rows)
+		if err != nil {
+			repo.log.Error("pg scan listed capture failed", zap.Error(err), zap.Duration("duration", time.Since(started)))
+			return capturemodel.ListResult{}, err
+		}
+		records = append(records, record)
+	}
+	if err := rows.Err(); err != nil {
+		repo.log.Error("pg iterate captures failed", zap.Error(err), zap.Duration("duration", time.Since(started)))
+		return capturemodel.ListResult{}, fmt.Errorf("iterate captures: %w", err)
+	}
+
+	hasMore := len(records) > query.Limit
+	if hasMore {
+		records = records[:query.Limit]
+	}
+
+	repo.log.Debug(
+		"pg list captures completed",
+		zap.Int("record_count", len(records)),
+		zap.Bool("has_more", hasMore),
+		zap.Duration("duration", time.Since(started)),
+	)
+
+	return capturemodel.ListResult{Records: records, HasMore: hasMore}, nil
 }
 
 func (repo *Repository) CaptureStats(ctx context.Context) (capturemodel.Stats, error) {
@@ -254,6 +325,7 @@ func scanCapture(scanner captureScanner) (capturemodel.Record, error) {
 		&record.SizeBytes,
 		&record.ChecksumSHA256,
 		&metadata,
+		&record.CreatedAt,
 	)
 	if err != nil {
 		return capturemodel.Record{}, fmt.Errorf("scan capture: %w", err)

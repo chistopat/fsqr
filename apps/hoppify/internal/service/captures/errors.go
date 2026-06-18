@@ -9,6 +9,7 @@ const (
 	PayloadTooLarge      ErrorCode = "payload_too_large"
 	UnsupportedMediaType ErrorCode = "unsupported_media_type"
 	StorageError         ErrorCode = "storage_error"
+	NotFound             ErrorCode = "not_found"
 	InternalError        ErrorCode = "internal_error"
 )
 

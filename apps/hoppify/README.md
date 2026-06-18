@@ -4,11 +4,14 @@ Hoppify is a single-container app in the Kailas stack. The backend serves API ro
 
 Current production behavior:
 
-- `GET /` serves a placeholder page.
+- `GET /` serves the React captures gallery.
 - `GET /assets/*` serves static frontend assets.
 - `GET /live` returns a JSON liveness response.
 - `GET /metrics` exposes a minimal Prometheus text endpoint.
 - `GET /swagger.json` and `GET /swagger` serve OpenAPI documentation.
+- `GET /api/v1/captures` returns top-level image captures ordered from newest to oldest with
+  `limit`/`offset` pagination and browser-ready `imageUrl` values.
+- `GET /api/v1/captures/{uuid}/image` streams the stored JPEG for a capture or crop UUID.
 - `POST /api/v1/captures` accepts 1..10 JPEG, PNG, or WebP images as multipart `files`, stores JPEG
   uploads byte-for-byte without recompression, converts PNG/WebP uploads to JPEG quality 95, stores
   them in S3-compatible object storage, and records metadata in Postgres. Responses include `uuid`,

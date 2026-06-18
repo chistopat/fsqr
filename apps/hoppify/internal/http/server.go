@@ -22,18 +22,26 @@ type liveResponse struct {
 type HandlerOption func(*handlerConfig)
 
 type handlerConfig struct {
-	captureService   CaptureCreator
-	detectService    DetectorService
-	cropService      CropCreator
-	beerLabelService BeerLabelIdentifier
-	limits           capturemodel.Limits
-	log              *zap.Logger
-	metrics          *HTTPMetrics
+	captureService       CaptureCreator
+	captureLister        CaptureLister
+	captureImageProvider CaptureImageProvider
+	detectService        DetectorService
+	cropService          CropCreator
+	beerLabelService     BeerLabelIdentifier
+	limits               capturemodel.Limits
+	log                  *zap.Logger
+	metrics              *HTTPMetrics
 }
 
 func WithCaptureService(service CaptureCreator) HandlerOption {
 	return func(cfg *handlerConfig) {
 		cfg.captureService = service
+		if lister, ok := service.(CaptureLister); ok {
+			cfg.captureLister = lister
+		}
+		if provider, ok := service.(CaptureImageProvider); ok {
+			cfg.captureImageProvider = provider
+		}
 	}
 }
 
@@ -88,6 +96,8 @@ func NewHandler(options ...HandlerOption) http.Handler {
 	mux.HandleFunc("GET /swagger.json", serveSwaggerJSON)
 	mux.HandleFunc("GET /swagger", serveSwaggerViewer)
 	mux.HandleFunc("GET /swagger/", serveSwaggerViewer)
+	mux.HandleFunc("GET /api/v1/captures", listCaptures(cfg.captureLister, cfg.log))
+	mux.HandleFunc("GET /api/v1/captures/{uuid}/image", serveCaptureImage(cfg.captureImageProvider, cfg.log))
 	mux.HandleFunc("POST /api/v1/captures", createCaptures(cfg.captureService, cfg.limits, cfg.log))
 	mux.HandleFunc("POST /api/v1/detect", detectObjects(cfg.detectService, cfg.limits, cfg.log))
 	mux.HandleFunc("POST /api/v1/crops", createCrops(cfg.cropService, cfg.log))

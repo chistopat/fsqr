@@ -6,15 +6,84 @@ import (
 	"io"
 	"mime/multipart"
 	"net/http"
+	"strconv"
+	"strings"
 
 	capturemodel "github.com/chistopat/hoppify/internal/models/capture"
 	captureservice "github.com/chistopat/hoppify/internal/service/captures"
 
+	"github.com/google/uuid"
 	"go.uber.org/zap"
 )
 
 type CaptureCreator interface {
 	CreateCaptures(ctx context.Context, files []capturemodel.UploadFile) ([]capturemodel.Response, error)
+}
+
+type CaptureLister interface {
+	ListCaptures(ctx context.Context, query capturemodel.ListQuery) (capturemodel.ListResponse, error)
+}
+
+type CaptureImageProvider interface {
+	CaptureImage(ctx context.Context, id uuid.UUID) (capturemodel.Object, error)
+}
+
+func listCaptures(service CaptureLister, log *zap.Logger) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if service == nil {
+			writeError(w, http.StatusInternalServerError, string(captureservice.InternalError), "internal server error")
+			return
+		}
+
+		query, ok := readCaptureListQuery(w, r)
+		if !ok {
+			return
+		}
+
+		loggerOrNop(log).Debug(
+			"list captures request accepted",
+			zap.Int("limit", query.Limit),
+			zap.Int("offset", query.Offset),
+		)
+		response, err := service.ListCaptures(r.Context(), query)
+		if err != nil {
+			loggerOrNop(log).Error("list captures request failed", zap.Error(err))
+			writeCaptureError(w, err)
+			return
+		}
+
+		writeJSON(w, http.StatusOK, response)
+	}
+}
+
+func serveCaptureImage(service CaptureImageProvider, log *zap.Logger) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if service == nil {
+			writeError(w, http.StatusInternalServerError, string(captureservice.InternalError), "internal server error")
+			return
+		}
+
+		id, err := uuid.Parse(strings.TrimSpace(r.PathValue("uuid")))
+		if err != nil {
+			writeError(w, http.StatusBadRequest, string(captureservice.InvalidRequest), "uuid must be a valid UUID")
+			return
+		}
+
+		object, err := service.CaptureImage(r.Context(), id)
+		if err != nil {
+			loggerOrNop(log).Error("serve capture image request failed", zap.String("uuid", id.String()), zap.Error(err))
+			writeCaptureError(w, err)
+			return
+		}
+
+		w.Header().Set("Content-Type", object.ContentType)
+		w.Header().Set("Cache-Control", "private, max-age=300")
+		w.Header().Set("Content-Length", strconv.Itoa(len(object.Body)))
+		w.WriteHeader(http.StatusOK)
+		if _, err := w.Write(object.Body); err != nil {
+			loggerOrNop(log).Warn("write capture image response failed", zap.String("uuid", id.String()), zap.Error(err))
+		}
+	}
 }
 
 func createCaptures(service CaptureCreator, limits capturemodel.Limits, log *zap.Logger) http.HandlerFunc {
@@ -40,6 +109,49 @@ func createCaptures(service CaptureCreator, limits capturemodel.Limits, log *zap
 		loggerOrNop(log).Info("create captures request completed", zap.Int("capture_count", len(captures)))
 		writeJSON(w, http.StatusCreated, capturemodel.CapturesResponse{Captures: captures})
 	}
+}
+
+func readCaptureListQuery(w http.ResponseWriter, r *http.Request) (capturemodel.ListQuery, bool) {
+	limit, ok := readOptionalPositiveInt(w, r, "limit")
+	if !ok {
+		return capturemodel.ListQuery{}, false
+	}
+	offset, ok := readOptionalNonNegativeInt(w, r, "offset")
+	if !ok {
+		return capturemodel.ListQuery{}, false
+	}
+
+	return capturemodel.ListQuery{Limit: limit, Offset: offset}, true
+}
+
+func readOptionalPositiveInt(w http.ResponseWriter, r *http.Request, name string) (int, bool) {
+	raw := strings.TrimSpace(r.URL.Query().Get(name))
+	if raw == "" {
+		return 0, true
+	}
+
+	value, err := strconv.Atoi(raw)
+	if err != nil || value <= 0 {
+		writeError(w, http.StatusBadRequest, string(captureservice.InvalidRequest), name+" must be a positive integer")
+		return 0, false
+	}
+
+	return value, true
+}
+
+func readOptionalNonNegativeInt(w http.ResponseWriter, r *http.Request, name string) (int, bool) {
+	raw := strings.TrimSpace(r.URL.Query().Get(name))
+	if raw == "" {
+		return 0, true
+	}
+
+	value, err := strconv.Atoi(raw)
+	if err != nil || value < 0 {
+		writeError(w, http.StatusBadRequest, string(captureservice.InvalidRequest), name+" must be a non-negative integer")
+		return 0, false
+	}
+
+	return value, true
 }
 
 func readCaptureFiles(

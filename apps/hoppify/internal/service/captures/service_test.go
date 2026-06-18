@@ -306,6 +306,41 @@ func (repo *fakeRepository) InsertCaptures(_ context.Context, records []capturem
 	return nil
 }
 
+func (repo *fakeRepository) ListCaptures(
+	_ context.Context,
+	query capturemodel.ListQuery,
+) (capturemodel.ListResult, error) {
+	if repo.err != nil {
+		return capturemodel.ListResult{}, repo.err
+	}
+
+	limit := query.Limit
+	if limit <= 0 || limit > len(repo.records) {
+		limit = len(repo.records)
+	}
+	if query.Offset >= len(repo.records) {
+		return capturemodel.ListResult{}, nil
+	}
+
+	records := repo.records[query.Offset:]
+	hasMore := len(records) > limit
+	if hasMore {
+		records = records[:limit]
+	}
+
+	return capturemodel.ListResult{Records: records, HasMore: hasMore}, nil
+}
+
+func (repo *fakeRepository) FindCaptureByUUID(_ context.Context, id uuid.UUID) (capturemodel.Record, error) {
+	for index := range repo.records {
+		if repo.records[index].UUID == id {
+			return repo.records[index], nil
+		}
+	}
+
+	return capturemodel.Record{}, capturemodel.ErrNotFound
+}
+
 func (repo *fakeRepository) hasRecord(id uuid.UUID) bool {
 	for index := range repo.records {
 		if repo.records[index].UUID == id {
@@ -330,6 +365,22 @@ func (storage *fakeStorage) PutObject(_ context.Context, object capturemodel.Obj
 	storage.puts = append(storage.puts, object)
 
 	return nil
+}
+
+func (storage *fakeStorage) GetObject(
+	_ context.Context,
+	bucket string,
+	objectKey string,
+	_ int64,
+) (capturemodel.Object, error) {
+	for index := range storage.puts {
+		object := storage.puts[index]
+		if object.Bucket == bucket && object.ObjectKey == objectKey {
+			return object, nil
+		}
+	}
+
+	return capturemodel.Object{}, errors.New("missing object")
 }
 
 func (storage *fakeStorage) DeleteObject(_ context.Context, bucket string, objectKey string) error {

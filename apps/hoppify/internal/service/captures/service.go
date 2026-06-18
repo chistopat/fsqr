@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"image"
 	"image/color"
@@ -24,14 +25,19 @@ import (
 const (
 	captureNamespace  = "dc8d926c-3559-4b27-96a6-54a802af5d0a"
 	captureUUIDPrefix = "hoppify-capture-v1|"
+	defaultListLimit  = 30
+	maxListLimit      = 100
 )
 
 type Repository interface {
 	InsertCaptures(ctx context.Context, records []capturemodel.Record) error
+	ListCaptures(ctx context.Context, query capturemodel.ListQuery) (capturemodel.ListResult, error)
+	FindCaptureByUUID(ctx context.Context, id uuid.UUID) (capturemodel.Record, error)
 }
 
 type ObjectStorage interface {
 	PutObject(ctx context.Context, object capturemodel.Object) error
+	GetObject(ctx context.Context, bucket string, objectKey string, maxBytes int64) (capturemodel.Object, error)
 	DeleteObject(ctx context.Context, bucket, objectKey string) error
 }
 
@@ -110,6 +116,43 @@ func (svc *Service) CreateCaptures(
 	}
 
 	return responsesFromRecords(records), nil
+}
+
+func (svc *Service) ListCaptures(
+	ctx context.Context,
+	query capturemodel.ListQuery,
+) (capturemodel.ListResponse, error) {
+	query = normalizeListQuery(query)
+
+	result, err := svc.repository.ListCaptures(ctx, query)
+	if err != nil {
+		return capturemodel.ListResponse{}, newError(InternalError, "internal server error", err)
+	}
+
+	return capturemodel.ListResponseFromRecords(result.Records, query, result.HasMore), nil
+}
+
+func (svc *Service) CaptureImage(ctx context.Context, id uuid.UUID) (capturemodel.Object, error) {
+	record, err := svc.repository.FindCaptureByUUID(ctx, id)
+	if errors.Is(err, capturemodel.ErrNotFound) {
+		return capturemodel.Object{}, newError(NotFound, "capture was not found", err)
+	}
+	if err != nil {
+		return capturemodel.Object{}, newError(InternalError, "internal server error", err)
+	}
+	if record.ContentType != capturemodel.ContentTypeJPEG {
+		return capturemodel.Object{}, newError(UnsupportedMediaType, "capture is not a supported image", nil)
+	}
+
+	object, err := svc.storage.GetObject(ctx, record.Bucket, record.ObjectKey, svc.limits.MaxFileBytes)
+	if err != nil {
+		return capturemodel.Object{}, newError(StorageError, "object storage read failed", err)
+	}
+	if object.ContentType == "" {
+		object.ContentType = record.ContentType
+	}
+
+	return object, nil
 }
 
 func (svc *Service) validateBatchSize(files []capturemodel.UploadFile) error {
@@ -322,6 +365,20 @@ func normalizeLimits(limits capturemodel.Limits) capturemodel.Limits {
 	}
 
 	return limits
+}
+
+func normalizeListQuery(query capturemodel.ListQuery) capturemodel.ListQuery {
+	if query.Limit <= 0 {
+		query.Limit = defaultListLimit
+	}
+	if query.Limit > maxListLimit {
+		query.Limit = maxListLimit
+	}
+	if query.Offset < 0 {
+		query.Offset = 0
+	}
+
+	return query
 }
 
 func normalizeJPEGQuality(quality int) int {

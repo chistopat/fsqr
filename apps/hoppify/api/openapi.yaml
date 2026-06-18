@@ -24,6 +24,46 @@ paths:
                     type: string
                     example: hoppify
   /api/v1/captures:
+    get:
+      summary: List image captures
+      description: Returns stored top-level image captures ordered from newest to oldest.
+      parameters:
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 30
+          description: Maximum number of captures to return.
+        - name: offset
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 0
+            default: 0
+          description: Number of captures to skip.
+      responses:
+        "200":
+          description: Captures were listed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CaptureListResponse"
+        "400":
+          description: Invalid pagination query
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          description: Internal error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
     post:
       summary: Upload image captures
       description: >
@@ -70,6 +110,55 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
         "415":
           description: Unsupported image media type
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "502":
+          description: Object storage failed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          description: Internal error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /api/v1/captures/{uuid}/image:
+    get:
+      summary: Get a capture image
+      parameters:
+        - name: uuid
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: Capture or crop UUID.
+      responses:
+        "200":
+          description: JPEG image bytes
+          content:
+            image/jpeg:
+              schema:
+                type: string
+                format: binary
+        "400":
+          description: Invalid UUID
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Capture UUID was not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "415":
+          description: Capture is not a supported image
           content:
             application/json:
               schema:
@@ -786,6 +875,73 @@ components:
         url:
           type: string
           example: s3://hoppify/captures/image/018f7b8e-4d96-7b42-9f64-09e5d3a8e7c1.jpg
+    CaptureListResponse:
+      type: object
+      required:
+        - captures
+        - limit
+        - offset
+        - hasMore
+      properties:
+        captures:
+          type: array
+          items:
+            $ref: "#/components/schemas/CaptureListItem"
+        limit:
+          type: integer
+          example: 30
+        offset:
+          type: integer
+          example: 0
+        nextOffset:
+          type: integer
+          example: 30
+        hasMore:
+          type: boolean
+          example: true
+    CaptureListItem:
+      type: object
+      required:
+        - uuid
+        - type
+        - uri
+        - imageUrl
+        - createdAt
+        - sizeBytes
+      properties:
+        uuid:
+          type: string
+          format: uuid
+          example: 018f7b8e-4d96-7b42-9f64-09e5d3a8e7c1
+        type:
+          type: string
+          example: image
+        uri:
+          type: string
+          example: s3://hoppify/captures/image/018f7b8e-4d96-7b42-9f64-09e5d3a8e7c1.jpg
+        imageUrl:
+          type: string
+          example: /api/v1/captures/018f7b8e-4d96-7b42-9f64-09e5d3a8e7c1/image
+        createdAt:
+          type: string
+          format: date-time
+        sizeBytes:
+          type: integer
+          format: int64
+          example: 245701
+        width:
+          type: integer
+          example: 4032
+        height:
+          type: integer
+          example: 3024
+        originalFilename:
+          type: string
+          example: shelf.png
+        originalSizeBytes:
+          type: integer
+          format: int64
+          example: 3750462
     ErrorResponse:
       type: object
       required:

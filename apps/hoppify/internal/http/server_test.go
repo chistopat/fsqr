@@ -21,6 +21,8 @@ import (
 	captureservice "github.com/chistopat/hoppify/internal/service/captures"
 	cropservice "github.com/chistopat/hoppify/internal/service/crops"
 	detectservice "github.com/chistopat/hoppify/internal/service/detect"
+
+	"github.com/google/uuid"
 )
 
 func TestHandlerServesPlaceholderPage(t *testing.T) {
@@ -129,6 +131,91 @@ func TestCreateCapturesAcceptsMultipartFiles(t *testing.T) {
 	}
 	if len(body.Captures) != 1 || body.Captures[0] != expectedCaptures[0] {
 		t.Fatalf("unexpected captures response: %#v", body.Captures)
+	}
+}
+
+func TestListCapturesReturnsPagedGallery(t *testing.T) {
+	t.Parallel()
+
+	createdAt := time.Date(2026, 6, 18, 12, 30, 0, 0, time.UTC)
+	service := &fakeCaptureService{listResponse: capturemodel.ListResponse{
+		Captures: []capturemodel.ListItem{{
+			UUID:      "018f7b8e-4d96-7b42-9f64-09e5d3a8e7c1",
+			Type:      "image",
+			URI:       "s3://hoppify/captures/image/018f7b8e-4d96-7b42-9f64-09e5d3a8e7c1.jpg",
+			ImageURL:  "/api/v1/captures/018f7b8e-4d96-7b42-9f64-09e5d3a8e7c1/image",
+			CreatedAt: createdAt,
+			SizeBytes: 1234,
+			Width:     800,
+			Height:    600,
+		}},
+		Limit:      2,
+		Offset:     4,
+		NextOffset: 5,
+		HasMore:    true,
+	}}
+	handler := NewHandler(WithCaptureService(service))
+	request := httptest.NewRequest(http.MethodGet, "/api/v1/captures?limit=2&offset=4", nil)
+	response := httptest.NewRecorder()
+
+	handler.ServeHTTP(response, request)
+
+	if response.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d with body %q", http.StatusOK, response.Code, response.Body.String())
+	}
+	if service.listQuery != (capturemodel.ListQuery{Limit: 2, Offset: 4}) {
+		t.Fatalf("unexpected list query: %#v", service.listQuery)
+	}
+
+	var body capturemodel.ListResponse
+	if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if len(body.Captures) != 1 || body.Captures[0].ImageURL == "" || !body.HasMore {
+		t.Fatalf("unexpected list response: %#v", body)
+	}
+}
+
+func TestListCapturesRejectsInvalidQuery(t *testing.T) {
+	t.Parallel()
+
+	handler := NewHandler(WithCaptureService(&fakeCaptureService{}))
+	request := httptest.NewRequest(http.MethodGet, "/api/v1/captures?limit=0", nil)
+	response := httptest.NewRecorder()
+
+	handler.ServeHTTP(response, request)
+
+	assertAPIError(t, response, http.StatusBadRequest, string(captureservice.InvalidRequest))
+}
+
+func TestServeCaptureImageReturnsObjectBytes(t *testing.T) {
+	t.Parallel()
+
+	service := &fakeCaptureService{image: capturemodel.Object{
+		ContentType: "image/jpeg",
+		Body:        []byte{0xff, 0xd8, 0xff, 0xd9},
+	}}
+	handler := NewHandler(WithCaptureService(service))
+	request := httptest.NewRequest(
+		http.MethodGet,
+		"/api/v1/captures/018f7b8e-4d96-7b42-9f64-09e5d3a8e7c1/image",
+		nil,
+	)
+	response := httptest.NewRecorder()
+
+	handler.ServeHTTP(response, request)
+
+	if response.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d with body %q", http.StatusOK, response.Code, response.Body.String())
+	}
+	if response.Header().Get("Content-Type") != "image/jpeg" {
+		t.Fatalf("unexpected content type: %q", response.Header().Get("Content-Type"))
+	}
+	if !bytes.Equal(response.Body.Bytes(), service.image.Body) {
+		t.Fatalf("unexpected image body: %v", response.Body.Bytes())
+	}
+	if service.imageUUID != "018f7b8e-4d96-7b42-9f64-09e5d3a8e7c1" {
+		t.Fatalf("unexpected image uuid: %q", service.imageUUID)
 	}
 }
 
@@ -605,9 +692,13 @@ func TestMetricsHandlerServesPrometheusMetrics(t *testing.T) {
 }
 
 type fakeCaptureService struct {
-	captures []capturemodel.Response
-	files    []capturemodel.UploadFile
-	err      error
+	captures     []capturemodel.Response
+	files        []capturemodel.UploadFile
+	listResponse capturemodel.ListResponse
+	listQuery    capturemodel.ListQuery
+	image        capturemodel.Object
+	imageUUID    string
+	err          error
 }
 
 type fakeCaptureStatsProvider struct {
@@ -682,6 +773,27 @@ func (service *fakeCaptureService) CreateCaptures(
 	}
 
 	return service.captures, nil
+}
+
+func (service *fakeCaptureService) ListCaptures(
+	_ context.Context,
+	query capturemodel.ListQuery,
+) (capturemodel.ListResponse, error) {
+	service.listQuery = query
+	if service.err != nil {
+		return capturemodel.ListResponse{}, service.err
+	}
+
+	return service.listResponse, nil
+}
+
+func (service *fakeCaptureService) CaptureImage(_ context.Context, id uuid.UUID) (capturemodel.Object, error) {
+	service.imageUUID = id.String()
+	if service.err != nil {
+		return capturemodel.Object{}, service.err
+	}
+
+	return service.image, nil
 }
 
 type multipartTestFile struct {
