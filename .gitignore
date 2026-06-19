@@ -16,6 +16,7 @@ etl/*
 !etl/scripts/
 etl/scripts/*
 !etl/scripts/import_overture_divisions.py
+!etl/scripts/import_hoppify_untappd_beers.py
 
 bin/*
 !bin/.gitkeep

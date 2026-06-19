@@ -59,6 +59,49 @@ Apply Hoppify migrations with:
 just postgres-migrate
 ```
 
+## Untappd beer catalog
+
+The local `data/beers.parquet` file is intentionally ignored by git. It contains Untappd catalog rows with
+`url`, `untappd_id`, `slog`, `brewery_prefix`, and `last_modified_at`. Migration `006_create_untappd_beers.sql`
+creates the Postgres target table and search indexes for importing this file.
+
+Import the parquet fields like this:
+
+- `untappd_id` -> `untappd_id`
+- `url` -> `url`
+- `slog` -> `untappd_slug`
+- `brewery_prefix` -> `brewery_prefix`
+- `last_modified_at` -> `last_modified_at`
+- `search_text`: lower-case searchable text made from `slog`, replacing non-alphanumeric characters with spaces
+  and collapsing repeated spaces.
+
+For direct Untappd extraction from OCR or model output, parse a full `https://untappd.com/b/.../<id>` URL or a
+trailing numeric Untappd id and look up by `untappd_id` or `url`. For OCR descriptions without a URL, combine
+full-text search with trigram similarity:
+
+```sql
+WITH query AS (
+    SELECT
+        websearch_to_tsquery('simple', $1) AS ts_query,
+        btrim(regexp_replace(lower($1), '[^[:alnum:]]+', ' ', 'g')) AS normalized_query
+)
+SELECT
+    beer.untappd_id,
+    beer.url,
+    beer.untappd_slug,
+    beer.brewery_prefix,
+    ts_rank_cd(to_tsvector('simple', beer.search_text), query.ts_query) AS text_rank,
+    similarity(beer.search_text, query.normalized_query) AS fuzzy_rank
+FROM untappd_beers beer, query
+WHERE to_tsvector('simple', beer.search_text) @@ query.ts_query
+    OR beer.search_text % query.normalized_query
+ORDER BY
+    text_rank DESC,
+    fuzzy_rank DESC,
+    beer.untappd_id
+LIMIT 10;
+```
+
 Run Hoppify functional tests against the Compose stack with:
 
 ```sh
