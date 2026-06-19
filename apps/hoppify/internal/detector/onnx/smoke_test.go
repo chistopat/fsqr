@@ -7,11 +7,13 @@ import (
 	"image"
 	"image/jpeg"
 	"os"
+	"strings"
 	"testing"
 )
 
 func TestDetectorSmoke(t *testing.T) {
 	modelPath := envDefault("HOPPIFY_DETECTOR_MODEL_PATH", "../../../models/sku110k-yolo11-s640.onnx")
+	modelPaths := append([]string{modelPath}, extraModelPaths()...)
 	runtimeLibraryPath := os.Getenv("HOPPIFY_DETECTOR_RUNTIME_LIBRARY_PATH")
 
 	file, err := os.Open("../../../tests/fixtures/detect-shelf.jpg")
@@ -26,14 +28,13 @@ func TestDetectorSmoke(t *testing.T) {
 	}
 	img = reencodeJPEG(t, img)
 
-	detector, err := NewDetector(Config{
-		ModelPath:           modelPath,
+	detector, err := NewDetectorSet(Config{
 		RuntimeLibraryPath:  runtimeLibraryPath,
 		ImageSize:           640,
 		ConfidenceThreshold: 0.25,
 		IOUThreshold:        0.7,
 		MaxDetections:       300,
-	})
+	}, modelPaths)
 	if err != nil {
 		t.Fatalf("new detector: %v", err)
 	}
@@ -76,4 +77,21 @@ func envDefault(key string, fallback string) string {
 	}
 
 	return fallback
+}
+
+func extraModelPaths() []string {
+	raw := os.Getenv("HOPPIFY_DETECTOR_ADDITIONAL_MODEL_PATHS")
+	if raw == "" {
+		return nil
+	}
+
+	paths := make([]string, 0)
+	for _, path := range strings.Split(raw, ",") {
+		path = strings.TrimSpace(path)
+		if path != "" {
+			paths = append(paths, path)
+		}
+	}
+
+	return paths
 }

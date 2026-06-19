@@ -179,8 +179,9 @@ paths:
     post:
       summary: Detect objects in a capture image
       description: >
-        Runs the configured object detector against exactly one image source: a stored capture UUID,
-        an S3 URI returned by captures/crops, or a direct multipart file.
+        Runs the configured object detectors against exactly one image source: a stored capture UUID,
+        an S3 URI returned by captures/crops, or a direct multipart file. Results from all configured
+        detector models are merged into one detection pool.
       requestBody:
         required: true
         content:
@@ -974,7 +975,7 @@ components:
             - 1280
         results:
           type: array
-          description: Detections ordered by descending confidence after NMS.
+          description: Detections from all configured detector models, ordered by descending confidence after NMS.
           items:
             $ref: "#/components/schemas/Detection"
         speed:

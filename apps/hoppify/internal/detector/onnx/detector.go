@@ -2,6 +2,7 @@ package onnx
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"image"
 	"sync"
@@ -38,6 +39,11 @@ type Detector struct {
 	runMu   sync.Mutex
 }
 
+type DetectorSet struct {
+	detectors []*Detector
+	cfg       Config
+}
+
 func NewDetector(cfg Config) (*Detector, error) {
 	cfg = normalizeConfig(cfg)
 	if cfg.ModelPath == "" {
@@ -54,6 +60,27 @@ func NewDetector(cfg Config) (*Detector, error) {
 	}
 
 	return &Detector{session: session, cfg: cfg}, nil
+}
+
+func NewDetectorSet(cfg Config, modelPaths []string) (*DetectorSet, error) {
+	cfg = normalizeConfig(cfg)
+	if len(modelPaths) == 0 {
+		return nil, fmt.Errorf("at least one onnx model path is required")
+	}
+
+	detectors := make([]*Detector, 0, len(modelPaths))
+	for _, modelPath := range modelPaths {
+		modelCfg := cfg
+		modelCfg.ModelPath = modelPath
+		detector, err := NewDetector(modelCfg)
+		if err != nil {
+			_ = closeDetectors(detectors)
+			return nil, fmt.Errorf("create detector for %s: %w", modelPath, err)
+		}
+		detectors = append(detectors, detector)
+	}
+
+	return &DetectorSet{detectors: detectors, cfg: cfg}, nil
 }
 
 func (detector *Detector) Detect(
@@ -96,6 +123,27 @@ func (detector *Detector) Detect(
 	}, nil
 }
 
+func (set *DetectorSet) Detect(
+	ctx context.Context,
+	img image.Image,
+) (detectionmodel.ImageResult, error) {
+	if set == nil || len(set.detectors) == 0 {
+		return detectionmodel.ImageResult{}, fmt.Errorf("onnx detector set is empty")
+	}
+
+	result := detectionmodel.ImageResult{}
+	for _, detector := range set.detectors {
+		imageResult, err := detector.Detect(ctx, img)
+		if err != nil {
+			return detectionmodel.ImageResult{}, err
+		}
+		result = mergeImageResults(result, imageResult)
+	}
+	result.Results = nonMaxSuppressionClassAgnostic(result.Results, set.cfg.IOUThreshold, set.cfg.MaxDetections)
+
+	return result, nil
+}
+
 func (detector *Detector) Close() error {
 	if detector == nil || detector.session == nil {
 		return nil
@@ -106,6 +154,40 @@ func (detector *Detector) Close() error {
 	}
 
 	return nil
+}
+
+func (set *DetectorSet) Close() error {
+	if set == nil {
+		return nil
+	}
+
+	return closeDetectors(set.detectors)
+}
+
+func closeDetectors(detectors []*Detector) error {
+	var joined error
+	for _, detector := range detectors {
+		if err := detector.Close(); err != nil {
+			joined = errors.Join(joined, err)
+		}
+	}
+
+	return joined
+}
+
+func mergeImageResults(
+	base detectionmodel.ImageResult,
+	next detectionmodel.ImageResult,
+) detectionmodel.ImageResult {
+	if base.Shape == [2]int{} {
+		base.Shape = next.Shape
+	}
+	base.Results = append(base.Results, next.Results...)
+	base.Speed.Preprocess += next.Speed.Preprocess
+	base.Speed.Inference += next.Speed.Inference
+	base.Speed.Postprocess += next.Speed.Postprocess
+
+	return base
 }
 
 func (detector *Detector) run(inputData []float32) (*ort.Tensor[float32], error) {

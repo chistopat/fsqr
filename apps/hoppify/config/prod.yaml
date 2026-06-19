@@ -35,6 +35,8 @@ upload:
 
 detector:
   model_path: "models/sku110k-yolo11-s640.onnx"
+  additional_model_paths:
+    - "models/hoppify-yolo11-640n.onnx"
   runtime_library_path: "/app/lib/libonnxruntime.so.1.22.0"
   image_size: 640
   confidence_threshold: 0.25

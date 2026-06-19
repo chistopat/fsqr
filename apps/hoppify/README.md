@@ -17,7 +17,8 @@ Current production behavior:
   them in S3-compatible object storage, and records metadata in Postgres. Responses include `uuid`,
   `uri`, and `url`.
 - `POST /api/v1/detect` accepts exactly one source: JSON `uuid`, JSON `url`/`uri` with an `s3://...`
-  object URI, or a multipart `file`, and returns Ultralytics-style object detections.
+  object URI, or a multipart `file`, runs all configured detector models, and returns one merged
+  Ultralytics-style detection pool.
 - `POST /api/v1/crops` creates JPEG crops and returns each crop `uuid`, `uri`, and `url`.
 - `POST /api/v1/beer-labels/identify` accepts JSON `uuid`, `url`, or `uri`, uses Gemini 2.5 Flash-Lite
   with the v3 vision-only prompt, and caches by UUID and v3 prompt version when the source maps to a
@@ -30,9 +31,10 @@ Required runtime dependencies:
   application credentials.
 - S3-compatible object storage, configured through the YAML files in `config/` with optional
   `HOPPIFY_*` env overrides.
-- ONNX Runtime and the SKU-110K YOLO11s 640 ONNX model. Production and e2e Docker images download
-  `weights/sku110k-yolo11-s640.onnx` during image build, verify its SHA256 checksum, and copy it to
-  `/app/models/sku110k-yolo11-s640.onnx` with `libonnxruntime.so.1.22.0` under `/app/lib`.
+- ONNX Runtime, the SKU-110K YOLO11s 640 ONNX model, and the Hoppify YOLO11n 640 ONNX model.
+  Production and e2e Docker images verify both model SHA256 checksums and copy them to
+  `/app/models/sku110k-yolo11-s640.onnx` and `/app/models/hoppify-yolo11-640n.onnx` with
+  `libonnxruntime.so.1.22.0` under `/app/lib`.
 - Gemini API access for beer label recognition. Configure `HOPPIFY_BEER_LABEL_GEMINI_API_KEY`,
   `GEMINI_API_KEY`, or `GOOGLE_API_KEY`; without a key, the beer label endpoint returns
   `model_unavailable`.

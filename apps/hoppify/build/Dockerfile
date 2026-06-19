@@ -21,13 +21,18 @@ FROM debian:bookworm-slim AS artifacts
 
 ARG TARGETARCH
 ARG ONNXRUNTIME_VERSION
-ARG MODEL_SHA256=e8bc019d4241cf9486c4b6aaf50d51b652b3a0d641fce1189fbba12136794cd1
+ARG SKU110K_MODEL_SHA256=e8bc019d4241cf9486c4b6aaf50d51b652b3a0d641fce1189fbba12136794cd1
+ARG HOPPIFY_YOLO11_640N_MODEL_SHA256=e0c4241f7a0a77aa4300648cf75896fa2fab0f43d6955ebdac6c67ea72271b0d
 
 WORKDIR /out
 
 COPY models/sku110k-yolo11-s640.onnx ./models/sku110k-yolo11-s640.onnx
+COPY models/hoppify-yolo11-640n.onnx ./models/hoppify-yolo11-640n.onnx
 
-RUN echo "${MODEL_SHA256}  models/sku110k-yolo11-s640.onnx" | sha256sum -c -
+RUN printf '%s  %s\n%s  %s\n' \
+        "${SKU110K_MODEL_SHA256}" "models/sku110k-yolo11-s640.onnx" \
+        "${HOPPIFY_YOLO11_640N_MODEL_SHA256}" "models/hoppify-yolo11-640n.onnx" \
+    | sha256sum -c -
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends ca-certificates curl tar \

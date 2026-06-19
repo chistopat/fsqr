@@ -93,12 +93,13 @@ type UploadConfig struct {
 }
 
 type DetectorConfig struct {
-	ModelPath           string  `mapstructure:"model_path"`
-	RuntimeLibraryPath  string  `mapstructure:"runtime_library_path"`
-	ImageSize           int     `mapstructure:"image_size"`
-	ConfidenceThreshold float64 `mapstructure:"confidence_threshold"`
-	IOUThreshold        float64 `mapstructure:"iou_threshold"`
-	MaxDetections       int     `mapstructure:"max_detections"`
+	ModelPath            string   `mapstructure:"model_path"`
+	AdditionalModelPaths []string `mapstructure:"additional_model_paths"`
+	RuntimeLibraryPath   string   `mapstructure:"runtime_library_path"`
+	ImageSize            int      `mapstructure:"image_size"`
+	ConfidenceThreshold  float64  `mapstructure:"confidence_threshold"`
+	IOUThreshold         float64  `mapstructure:"iou_threshold"`
+	MaxDetections        int      `mapstructure:"max_detections"`
 }
 
 type BeerLabelConfig struct {
@@ -172,6 +173,24 @@ func (cfg UploadConfig) Limits() capturemodel.Limits {
 	}
 }
 
+func (cfg DetectorConfig) ModelPaths() []string {
+	paths := make([]string, 0, 1+len(cfg.AdditionalModelPaths))
+	seen := make(map[string]struct{}, 1+len(cfg.AdditionalModelPaths))
+	for _, path := range append([]string{cfg.ModelPath}, cfg.AdditionalModelPaths...) {
+		path = strings.TrimSpace(path)
+		if path == "" {
+			continue
+		}
+		if _, ok := seen[path]; ok {
+			continue
+		}
+		seen[path] = struct{}{}
+		paths = append(paths, path)
+	}
+
+	return paths
+}
+
 func setDefaults(loader *viper.Viper, env string) {
 	loader.SetDefault("app.name", "hoppify")
 	loader.SetDefault("app.env", env)
@@ -197,6 +216,7 @@ func setDefaults(loader *viper.Viper, env string) {
 	loader.SetDefault("upload.max_request_bytes", defaultMaxRequestSize)
 	loader.SetDefault("upload.jpeg_quality", defaultJPEGQuality)
 	loader.SetDefault("detector.model_path", defaultDetectorModelPath)
+	loader.SetDefault("detector.additional_model_paths", []string{})
 	loader.SetDefault("detector.runtime_library_path", defaultDetectorRuntimeLibrary)
 	loader.SetDefault("detector.image_size", defaultDetectorImageSize)
 	loader.SetDefault("detector.confidence_threshold", defaultDetectorConfidence)
@@ -242,6 +262,7 @@ func bindEnv(loader *viper.Viper) {
 	_ = loader.BindEnv("upload.max_request_bytes", "HOPPIFY_UPLOAD_MAX_REQUEST_BYTES")
 	_ = loader.BindEnv("upload.jpeg_quality", "HOPPIFY_UPLOAD_JPEG_QUALITY")
 	_ = loader.BindEnv("detector.model_path", "HOPPIFY_DETECTOR_MODEL_PATH")
+	_ = loader.BindEnv("detector.additional_model_paths", "HOPPIFY_DETECTOR_ADDITIONAL_MODEL_PATHS")
 	_ = loader.BindEnv("detector.runtime_library_path", "HOPPIFY_DETECTOR_RUNTIME_LIBRARY_PATH")
 	_ = loader.BindEnv("detector.image_size", "HOPPIFY_DETECTOR_IMAGE_SIZE")
 	_ = loader.BindEnv("detector.confidence_threshold", "HOPPIFY_DETECTOR_CONFIDENCE_THRESHOLD")

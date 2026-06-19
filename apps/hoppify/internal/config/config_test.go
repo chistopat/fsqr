@@ -29,6 +29,32 @@ func TestLoadLocalConfig(t *testing.T) {
 	assertObservabilityConfig(t, cfg)
 }
 
+func TestLoadDetectorAdditionalModelPathsFromEnv(t *testing.T) {
+	t.Setenv("HOPPIFY_ENV", "local")
+	t.Setenv("HOPPIFY_CONFIG_DIR", "../../config")
+	t.Setenv("HOPPIFY_DETECTOR_ADDITIONAL_MODEL_PATHS", "models/a.onnx,models/b.onnx")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("load config: %v", err)
+	}
+
+	expected := []string{
+		"models/sku110k-yolo11-s640.onnx",
+		"models/a.onnx",
+		"models/b.onnx",
+	}
+	paths := cfg.Detector.ModelPaths()
+	if len(paths) != len(expected) {
+		t.Fatalf("expected detector model paths %#v, got %#v", expected, paths)
+	}
+	for index := range expected {
+		if paths[index] != expected[index] {
+			t.Fatalf("expected detector model paths %#v, got %#v", expected, paths)
+		}
+	}
+}
+
 func assertAppConfig(t *testing.T, cfg Config) {
 	t.Helper()
 
@@ -69,6 +95,15 @@ func assertDetectorConfig(t *testing.T, cfg Config) {
 
 	if cfg.Detector.ModelPath != "models/sku110k-yolo11-s640.onnx" {
 		t.Fatalf("expected detector model path from config, got %q", cfg.Detector.ModelPath)
+	}
+	if len(cfg.Detector.AdditionalModelPaths) != 1 ||
+		cfg.Detector.AdditionalModelPaths[0] != "models/hoppify-yolo11-640n.onnx" {
+		t.Fatalf("expected additional detector model path from config, got %#v", cfg.Detector.AdditionalModelPaths)
+	}
+	if paths := cfg.Detector.ModelPaths(); len(paths) != 2 ||
+		paths[0] != "models/sku110k-yolo11-s640.onnx" ||
+		paths[1] != "models/hoppify-yolo11-640n.onnx" {
+		t.Fatalf("expected two detector model paths, got %#v", paths)
 	}
 	if cfg.Detector.RuntimeLibraryPath != "" {
 		t.Fatalf("expected empty detector runtime library path, got %q", cfg.Detector.RuntimeLibraryPath)

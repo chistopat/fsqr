@@ -23,6 +23,7 @@ bin/*
 apps/hoppify/models/*
 !apps/hoppify/models/
 !apps/hoppify/models/sku110k-yolo11-s640.onnx
+!apps/hoppify/models/hoppify-yolo11-640n.onnx
 
 deployment/.terraform/
 deployment/*.tfstate

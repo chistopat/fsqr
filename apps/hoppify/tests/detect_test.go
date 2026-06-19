@@ -77,30 +77,30 @@ func TestDetectCaptureReturnsRealBoundingBoxes(t *testing.T) {
 
 	imageResult := detect.Images[0]
 	assertShape(t, imageResult.Shape, []int{1024, 768})
-	if len(imageResult.Results) != 20 {
-		t.Fatalf("expected 20 detections, got %d", len(imageResult.Results))
+	if len(imageResult.Results) != 24 {
+		t.Fatalf("expected 24 detections, got %d", len(imageResult.Results))
 	}
 
 	assertDetection(t, imageResult.Results[0], detectDetection{
-		Class:      0,
+		Class:      1,
 		Name:       "object",
-		Confidence: 0.76871,
+		Confidence: 0.94035,
 		Box: detectBox{
-			X1: 335.04,
-			Y1: 700.36,
-			X2: 414.10,
-			Y2: 920.82,
+			X1: 427.97,
+			Y1: 350.98,
+			X2: 529.01,
+			Y2: 613.88,
 		},
 	})
 	assertDetection(t, imageResult.Results[2], detectDetection{
-		Class:      0,
+		Class:      1,
 		Name:       "object",
-		Confidence: 0.75392,
+		Confidence: 0.92315,
 		Box: detectBox{
-			X1: 235.01,
-			Y1: 350.55,
-			X2: 324.24,
-			Y2: 613.09,
+			X1: 329.37,
+			Y1: 349.24,
+			X2: 428.32,
+			Y2: 611.58,
 		},
 	})
 }

@@ -190,14 +190,13 @@ func newDetectorBackend(
 	cfg config.DetectorConfig,
 	detectorLog *zap.Logger,
 ) (detectorBackend detectservice.Detector, closeDetector func()) {
-	detector, err := onnxdetector.NewDetector(onnxdetector.Config{
-		ModelPath:           cfg.ModelPath,
+	detector, err := onnxdetector.NewDetectorSet(onnxdetector.Config{
 		RuntimeLibraryPath:  cfg.RuntimeLibraryPath,
 		ImageSize:           cfg.ImageSize,
 		ConfidenceThreshold: cfg.ConfidenceThreshold,
 		IOUThreshold:        cfg.IOUThreshold,
 		MaxDetections:       cfg.MaxDetections,
-	})
+	}, cfg.ModelPaths())
 	if err != nil {
 		detectorLog.Error("onnx detector unavailable", zap.Error(err))
 		return detectservice.NewUnavailableDetector(err), func() {}
