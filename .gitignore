@@ -33,3 +33,5 @@ deployment/*.tfvars.json
 
 # OpenTofu/Terraform local artifacts
 deployment/.terraform.lock.hcl
+
+apps/hoppify/data/**
