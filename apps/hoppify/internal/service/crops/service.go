@@ -27,7 +27,7 @@ const (
 	maxListLimit          = 100
 	cropNamespace         = "60c4f4c9-4c4c-4115-8914-9c1d7fe4a49e"
 	cropIdentityV1        = "hoppify-crop-v1"
-	cropIdentityV2Refined = "hoppify-crop-v2-refined"
+	cropIdentityV2Refined = "hoppify-crop-v3-refined"
 )
 
 type Repository interface {

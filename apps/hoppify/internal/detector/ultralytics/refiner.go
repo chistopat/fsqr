@@ -40,10 +40,16 @@ func (refiner *CropRefiner) RefineCrop(
 	if !ok {
 		return img, map[string]any{"applied": false, "reason": "no_geometry"}, false, nil
 	}
+	if geometry == boxGeometry {
+		return img, map[string]any{"applied": false, "reason": "axis_aligned_box"}, false, nil
+	}
 
 	refined, err = extractOrientedCrop(img, points)
 	if err != nil {
 		return nil, nil, false, fmt.Errorf("extract refined crop: %w", err)
+	}
+	if !validRefinedCrop(refined) {
+		return img, map[string]any{"applied": false, "reason": "invalid_refined_dimensions"}, false, nil
 	}
 
 	metadata = map[string]any{
@@ -56,6 +62,19 @@ func (refiner *CropRefiner) RefineCrop(
 	}
 
 	return refined, metadata, true, nil
+}
+
+func validRefinedCrop(img image.Image) bool {
+	bounds := img.Bounds()
+	width := bounds.Dx()
+	height := bounds.Dy()
+	if width < 16 || height < 16 {
+		return false
+	}
+
+	ratio := float64(max(width, height)) / float64(min(width, height))
+
+	return ratio <= 8
 }
 
 func bestResult(results []predictResult) *predictResult {

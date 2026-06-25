@@ -87,20 +87,20 @@ func TestCropRefinerExtractsOBBCrop(t *testing.T) {
 
 		writePredictResponse(t, w, map[string]any{
 			"images": []map[string]any{{
-				"shape": []int{4, 4},
+				"shape": []int{80, 80},
 				"results": []map[string]any{{
 					"class":      0,
 					"name":       "bottle",
 					"confidence": 0.91,
 					"obb": map[string]any{
-						"x1": 1,
-						"y1": 0,
-						"x2": 3,
-						"y2": 0,
-						"x3": 3,
-						"y3": 4,
-						"x4": 1,
-						"y4": 4,
+						"x1": 20,
+						"y1": 10,
+						"x2": 60,
+						"y2": 10,
+						"x3": 60,
+						"y3": 70,
+						"x4": 20,
+						"y4": 70,
 					},
 				}},
 			}},
@@ -113,7 +113,7 @@ func TestCropRefinerExtractsOBBCrop(t *testing.T) {
 		t.Fatalf("new crop refiner: %v", err)
 	}
 
-	refined, metadata, applied, err := refiner.RefineCrop(t.Context(), newTestImage(4, 4))
+	refined, metadata, applied, err := refiner.RefineCrop(t.Context(), newTestImage(80, 80))
 	if err != nil {
 		t.Fatalf("refine crop: %v", err)
 	}
@@ -121,11 +121,62 @@ func TestCropRefinerExtractsOBBCrop(t *testing.T) {
 	if !applied {
 		t.Fatalf("expected refiner to apply")
 	}
-	if refined.Bounds().Dx() != 2 || refined.Bounds().Dy() != 4 {
-		t.Fatalf("expected refined dimensions 2x4, got %dx%d", refined.Bounds().Dx(), refined.Bounds().Dy())
+	if refined.Bounds().Dx() != 40 || refined.Bounds().Dy() != 60 {
+		t.Fatalf("expected refined dimensions 40x60, got %dx%d", refined.Bounds().Dx(), refined.Bounds().Dy())
 	}
 	if metadata["applied"] != true || metadata["geometry"] != "obb" || metadata["name"] != "bottle" {
 		t.Fatalf("unexpected refiner metadata: %#v", metadata)
+	}
+}
+
+func TestCropRefinerDoesNotApplyAxisAlignedBox(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assertPredictRequest(t, r, map[string]string{
+			"conf":  "0.25",
+			"iou":   "0.7",
+			"imgsz": "640",
+		})
+
+		writePredictResponse(t, w, map[string]any{
+			"images": []map[string]any{{
+				"shape": []int{400, 200},
+				"results": []map[string]any{{
+					"class":      0,
+					"name":       "titled-object",
+					"confidence": 0.91,
+					"box": map[string]any{
+						"x1": 10,
+						"y1": 100,
+						"x2": 180,
+						"y2": 108,
+					},
+				}},
+			}},
+		})
+	}))
+	defer server.Close()
+
+	source := newTestImage(200, 400)
+	refiner, err := NewCropRefiner(Config{EndpointURL: server.URL, APIKey: "test-key"})
+	if err != nil {
+		t.Fatalf("new crop refiner: %v", err)
+	}
+
+	refined, metadata, applied, err := refiner.RefineCrop(t.Context(), source)
+	if err != nil {
+		t.Fatalf("refine crop: %v", err)
+	}
+
+	if applied {
+		t.Fatalf("expected axis-aligned box fallback not to apply")
+	}
+	if refined.Bounds() != source.Bounds() {
+		t.Fatalf("expected source image to be returned, got bounds %v", refined.Bounds())
+	}
+	if metadata["reason"] != "axis_aligned_box" {
+		t.Fatalf("expected axis_aligned_box reason, got %#v", metadata)
 	}
 }
 

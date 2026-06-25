@@ -16,6 +16,8 @@ type point struct {
 	Y float64
 }
 
+const boxGeometry = "box"
+
 func (result *predictResult) points(shape [2]int) ([]point, string, bool) {
 	if points, ok := pointsFromRaw(result.OBB, shape); ok {
 		return points, "obb", true
@@ -34,7 +36,7 @@ func (result *predictResult) points(shape [2]int) ([]point, string, bool) {
 	}
 	if result.Box != nil {
 		box := scaleNormalizedBox(*result.Box, shape)
-		return pointsFromBox(box), "box", true
+		return pointsFromBox(box), boxGeometry, true
 	}
 
 	return nil, "", false
