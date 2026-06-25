@@ -98,6 +98,29 @@ EOF
     exit 1
 }
 
+require_hoppify_detector_env() {
+    local detector_provider="${HOPPIFY_DETECTOR_PROVIDER:-ultralytics}"
+    local detector_api_key="${HOPPIFY_DETECTOR_API_KEY:-${HOPPIFY_ULTRALYTICS_API_KEY:-}}"
+    local crop_refiner_enabled="${HOPPIFY_CROP_REFINER_ENABLED:-true}"
+    local crop_refiner_api_key="${HOPPIFY_CROP_REFINER_API_KEY:-$detector_api_key}"
+
+    if [[ "$detector_provider" != "onnx" && -z "$detector_api_key" ]]; then
+        cat >&2 <<EOF
+HOPPIFY_DETECTOR_API_KEY must be set in $env_file for remote Hoppify detection.
+Set HOPPIFY_DETECTOR_PROVIDER=onnx to use the bundled ONNX fallback instead.
+EOF
+        exit 1
+    fi
+
+    if [[ "$crop_refiner_enabled" == "true" && -z "$crop_refiner_api_key" ]]; then
+        cat >&2 <<EOF
+HOPPIFY_CROP_REFINER_API_KEY or HOPPIFY_DETECTOR_API_KEY must be set in $env_file
+when HOPPIFY_CROP_REFINER_ENABLED=true.
+EOF
+        exit 1
+    fi
+}
+
 generate_config_file() {
     local path="$1"
     local postgres_db="${POSTGRES_DB:-fsqr}"
@@ -240,6 +263,8 @@ write_env_var() {
 generate_compose_env_file() {
     local path="$1"
     local hoppify_domain="${HOPPIFY_DOMAIN:-hoppify.${FSQR_DNS_ZONE:-kailas.cloud}}"
+    local detector_api_key="${HOPPIFY_DETECTOR_API_KEY:-${HOPPIFY_ULTRALYTICS_API_KEY:-}}"
+    local crop_refiner_api_key="${HOPPIFY_CROP_REFINER_API_KEY:-$detector_api_key}"
 
     : > "$path"
     write_env_var "$path" KAILAS_COMPOSE_PROJECT "${KAILAS_COMPOSE_PROJECT:-fsqr-prod}"
@@ -273,6 +298,20 @@ generate_compose_env_file() {
     write_env_var "$path" HOPPIFY_S3_SECRET_ACCESS_KEY "${HOPPIFY_S3_SECRET_ACCESS_KEY:-}"
     write_env_var "$path" HOPPIFY_S3_SESSION_TOKEN "${HOPPIFY_S3_SESSION_TOKEN:-}"
     write_env_var "$path" HOPPIFY_S3_FORCE_PATH_STYLE "${HOPPIFY_S3_FORCE_PATH_STYLE:-false}"
+    write_env_var "$path" HOPPIFY_DETECTOR_PROVIDER "${HOPPIFY_DETECTOR_PROVIDER:-ultralytics}"
+    write_env_var "$path" HOPPIFY_DETECTOR_ENDPOINT_URL "${HOPPIFY_DETECTOR_ENDPOINT_URL:-https://predict-6a3d2a572d3a16e25dea-dproatj77a-ey.a.run.app/predict}"
+    write_env_var "$path" HOPPIFY_DETECTOR_API_KEY "$detector_api_key"
+    write_env_var "$path" HOPPIFY_DETECTOR_TIMEOUT "${HOPPIFY_DETECTOR_TIMEOUT:-30s}"
+    write_env_var "$path" HOPPIFY_DETECTOR_IMAGE_SIZE "${HOPPIFY_DETECTOR_IMAGE_SIZE:-1280}"
+    write_env_var "$path" HOPPIFY_DETECTOR_CONFIDENCE_THRESHOLD "${HOPPIFY_DETECTOR_CONFIDENCE_THRESHOLD:-0.15}"
+    write_env_var "$path" HOPPIFY_DETECTOR_IOU_THRESHOLD "${HOPPIFY_DETECTOR_IOU_THRESHOLD:-0.15}"
+    write_env_var "$path" HOPPIFY_CROP_REFINER_ENABLED "${HOPPIFY_CROP_REFINER_ENABLED:-true}"
+    write_env_var "$path" HOPPIFY_CROP_REFINER_ENDPOINT_URL "${HOPPIFY_CROP_REFINER_ENDPOINT_URL:-https://predict-6a3d2a2c2d3a16e25dea-dproatj77a-ey.a.run.app/predict}"
+    write_env_var "$path" HOPPIFY_CROP_REFINER_API_KEY "$crop_refiner_api_key"
+    write_env_var "$path" HOPPIFY_CROP_REFINER_TIMEOUT "${HOPPIFY_CROP_REFINER_TIMEOUT:-30s}"
+    write_env_var "$path" HOPPIFY_CROP_REFINER_IMAGE_SIZE "${HOPPIFY_CROP_REFINER_IMAGE_SIZE:-640}"
+    write_env_var "$path" HOPPIFY_CROP_REFINER_CONFIDENCE_THRESHOLD "${HOPPIFY_CROP_REFINER_CONFIDENCE_THRESHOLD:-0.25}"
+    write_env_var "$path" HOPPIFY_CROP_REFINER_IOU_THRESHOLD "${HOPPIFY_CROP_REFINER_IOU_THRESHOLD:-0.7}"
     write_env_var "$path" WATCHTOWER_INTERVAL "${WATCHTOWER_INTERVAL:-30}"
     write_env_var "$path" GHCR_USERNAME "${GHCR_USERNAME:-}"
     write_env_var "$path" GHCR_TOKEN "${GHCR_TOKEN:-}"
@@ -300,6 +339,7 @@ require_env POSTGRES_PASSWORD
 require_env FSQR_DOMAIN
 require_env GRAFANA_ADMIN_PASSWORD
 require_hoppify_s3_env
+require_hoppify_detector_env
 
 host="$(resolve_host)"
 target="$ssh_user@$host"

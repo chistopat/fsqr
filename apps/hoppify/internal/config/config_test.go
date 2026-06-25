@@ -10,7 +10,16 @@ func TestLoadLocalConfig(t *testing.T) {
 	t.Setenv("HOPPIFY_CONFIG_DIR", "../../config")
 	t.Setenv("HOPPIFY_DATABASE_DSN", "postgres://hoppify:hoppify@127.0.0.1:5432/hoppify_test?sslmode=disable")
 	t.Setenv("HOPPIFY_S3_BUCKET", "test-bucket")
+	t.Setenv("HOPPIFY_DETECTOR_PROVIDER", "ultralytics")
+	t.Setenv("HOPPIFY_DETECTOR_ENDPOINT_URL", "https://example.test/detect")
+	t.Setenv("HOPPIFY_DETECTOR_API_KEY", "test-detector-key")
+	t.Setenv("HOPPIFY_DETECTOR_TIMEOUT", "15s")
 	t.Setenv("HOPPIFY_DETECTOR_CONFIDENCE_THRESHOLD", "0.4")
+	t.Setenv("HOPPIFY_CROP_REFINER_ENABLED", "true")
+	t.Setenv("HOPPIFY_CROP_REFINER_ENDPOINT_URL", "https://example.test/obb")
+	t.Setenv("HOPPIFY_CROP_REFINER_API_KEY", "test-refiner-key")
+	t.Setenv("HOPPIFY_CROP_REFINER_TIMEOUT", "20s")
+	t.Setenv("HOPPIFY_CROP_REFINER_IMAGE_SIZE", "512")
 	t.Setenv("HOPPIFY_BEER_LABEL_GEMINI_API_KEY", "test-gemini-key")
 	t.Setenv("HOPPIFY_BEER_LABEL_GEMINI_MODEL", "gemini-test")
 	t.Setenv("HOPPIFY_BEER_LABEL_GEMINI_TIMEOUT", "45s")
@@ -25,6 +34,7 @@ func TestLoadLocalConfig(t *testing.T) {
 	assertS3Config(t, cfg)
 	assertUploadConfig(t, cfg)
 	assertDetectorConfig(t, cfg)
+	assertCropRefinerConfig(t, cfg)
 	assertBeerLabelConfig(t, cfg)
 	assertObservabilityConfig(t, cfg)
 }
@@ -93,6 +103,17 @@ func assertUploadConfig(t *testing.T, cfg Config) {
 func assertDetectorConfig(t *testing.T, cfg Config) {
 	t.Helper()
 
+	assertDetectorPaths(t, cfg)
+	assertDetectorRemoteConfig(t, cfg)
+	assertDetectorInferenceConfig(t, cfg)
+}
+
+func assertDetectorPaths(t *testing.T, cfg Config) {
+	t.Helper()
+
+	if cfg.Detector.Provider != "ultralytics" {
+		t.Fatalf("expected detector provider from env, got %q", cfg.Detector.Provider)
+	}
 	if cfg.Detector.ModelPath != "models/sku110k-yolo11-s640.onnx" {
 		t.Fatalf("expected detector model path from config, got %q", cfg.Detector.ModelPath)
 	}
@@ -108,6 +129,25 @@ func assertDetectorConfig(t *testing.T, cfg Config) {
 	if cfg.Detector.RuntimeLibraryPath != "" {
 		t.Fatalf("expected empty detector runtime library path, got %q", cfg.Detector.RuntimeLibraryPath)
 	}
+}
+
+func assertDetectorRemoteConfig(t *testing.T, cfg Config) {
+	t.Helper()
+
+	if cfg.Detector.EndpointURL != "https://example.test/detect" {
+		t.Fatalf("expected detector endpoint url from env, got %q", cfg.Detector.EndpointURL)
+	}
+	if cfg.Detector.APIKey != "test-detector-key" {
+		t.Fatalf("expected detector api key from env")
+	}
+	if cfg.Detector.Timeout != 15*time.Second {
+		t.Fatalf("expected detector timeout 15s, got %s", cfg.Detector.Timeout)
+	}
+}
+
+func assertDetectorInferenceConfig(t *testing.T, cfg Config) {
+	t.Helper()
+
 	if cfg.Detector.ImageSize != 640 {
 		t.Fatalf("expected detector image size 640, got %d", cfg.Detector.ImageSize)
 	}
@@ -119,6 +159,32 @@ func assertDetectorConfig(t *testing.T, cfg Config) {
 	}
 	if cfg.Detector.MaxDetections != 300 {
 		t.Fatalf("expected detector max detections 300, got %d", cfg.Detector.MaxDetections)
+	}
+}
+
+func assertCropRefinerConfig(t *testing.T, cfg Config) {
+	t.Helper()
+
+	if !cfg.CropRefiner.Enabled {
+		t.Fatalf("expected crop refiner enabled from env")
+	}
+	if cfg.CropRefiner.EndpointURL != "https://example.test/obb" {
+		t.Fatalf("expected crop refiner endpoint url from env, got %q", cfg.CropRefiner.EndpointURL)
+	}
+	if cfg.CropRefiner.APIKey != "test-refiner-key" {
+		t.Fatalf("expected crop refiner api key from env")
+	}
+	if cfg.CropRefiner.Timeout != 20*time.Second {
+		t.Fatalf("expected crop refiner timeout 20s, got %s", cfg.CropRefiner.Timeout)
+	}
+	if cfg.CropRefiner.ImageSize != 512 {
+		t.Fatalf("expected crop refiner image size from env, got %d", cfg.CropRefiner.ImageSize)
+	}
+	if cfg.CropRefiner.ConfidenceThreshold != 0.25 {
+		t.Fatalf("expected crop refiner confidence threshold 0.25, got %f", cfg.CropRefiner.ConfidenceThreshold)
+	}
+	if cfg.CropRefiner.IOUThreshold != 0.7 {
+		t.Fatalf("expected crop refiner iou threshold 0.7, got %f", cfg.CropRefiner.IOUThreshold)
 	}
 }
 

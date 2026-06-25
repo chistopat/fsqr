@@ -9,6 +9,7 @@ const (
 	UnsupportedMediaType ErrorCode = "unsupported_media_type"
 	StorageError         ErrorCode = "storage_error"
 	NotFound             ErrorCode = "not_found"
+	InferenceError       ErrorCode = "inference_error"
 	InternalError        ErrorCode = "internal_error"
 )
 

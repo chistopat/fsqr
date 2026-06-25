@@ -62,6 +62,12 @@ HOPPIFY_S3_SECRET_ACCESS_KEY=
 HOPPIFY_S3_SESSION_TOKEN=
 HOPPIFY_S3_FORCE_PATH_STYLE=false
 HOPPIFY_S3_BUCKET_PUBLIC_READ=true
+HOPPIFY_DETECTOR_PROVIDER=ultralytics
+HOPPIFY_DETECTOR_API_KEY=
+HOPPIFY_DETECTOR_ENDPOINT_URL=https://predict-6a3d2a572d3a16e25dea-dproatj77a-ey.a.run.app/predict
+HOPPIFY_CROP_REFINER_ENABLED=true
+HOPPIFY_CROP_REFINER_ENDPOINT_URL=https://predict-6a3d2a2c2d3a16e25dea-dproatj77a-ey.a.run.app/predict
+HOPPIFY_CROP_REFINER_API_KEY=
 WATCHTOWER_INTERVAL=30
 GHCR_USERNAME=
 GHCR_TOKEN=
@@ -139,13 +145,17 @@ settings are not passed to the application as individual env vars.
 
 The `hoppify` container reads the `prod.yaml` bundled in its image and receives
 production database and S3 settings through `HOPPIFY_*` environment variables
-from `/opt/fsqr/.env`. The Hoppify image itself contains the detector assets:
+from `/opt/fsqr/.env`. Production Compose defaults Hoppify to the remote
+Ultralytics endpoints: `drinks-detector-fast-v2` for rough detections and
+`drinks-obb-fast-v1` for crop refinement. Set `HOPPIFY_DETECTOR_API_KEY` in
+root `.env`; `HOPPIFY_CROP_REFINER_API_KEY` is optional and falls back to the
+detector key when omitted.
+
+The Hoppify image still contains the ONNX detector fallback assets:
 `apps/hoppify/models/sku110k-yolo11-s640.onnx` and
 `apps/hoppify/models/hoppify-yolo11-640n.onnx` are copied into `/app/models`
 with pinned SHA256 checks, and `libonnxruntime.so.1.22.0` is copied to
-`/app/lib`. No production volume or manual model sync is required unless
-`HOPPIFY_DETECTOR_MODEL_PATH`, `HOPPIFY_DETECTOR_ADDITIONAL_MODEL_PATHS`, or
-`HOPPIFY_DETECTOR_RUNTIME_LIBRARY_PATH` is overridden.
+`/app/lib`. Set `HOPPIFY_DETECTOR_PROVIDER=onnx` to use this path.
 
 Run migrations independently after bootstrap:
 

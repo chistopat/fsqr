@@ -26,6 +26,8 @@ const (
 	defaultListLimit      = 30
 	maxListLimit          = 100
 	cropNamespace         = "60c4f4c9-4c4c-4115-8914-9c1d7fe4a49e"
+	cropIdentityV1        = "hoppify-crop-v1"
+	cropIdentityV2Refined = "hoppify-crop-v2-refined"
 )
 
 type Repository interface {
@@ -40,10 +42,15 @@ type ObjectStorage interface {
 	PutObject(ctx context.Context, object capturemodel.Object) error
 }
 
+type Refiner interface {
+	RefineCrop(ctx context.Context, img image.Image) (image.Image, map[string]any, bool, error)
+}
+
 type Config struct {
 	MaxObjectBytes int64
 	JPEGQuality    int
 	MaxBoxes       int
+	Refiner        Refiner
 }
 
 type Service struct {
@@ -53,12 +60,19 @@ type Service struct {
 	jpegQuality    int
 	maxBoxes       int
 	namespace      uuid.UUID
+	cropIdentity   string
+	refiner        Refiner
 }
 
 type cropSpec struct {
 	id        uuid.UUID
 	rect      image.Rectangle
 	objectKey string
+}
+
+type preparedCrop struct {
+	body     []byte
+	metadata map[string]any
 }
 
 func NewService(repository Repository, storage ObjectStorage, cfg Config) (*Service, error) {
@@ -76,6 +90,8 @@ func NewService(repository Repository, storage ObjectStorage, cfg Config) (*Serv
 		jpegQuality:    normalizeJPEGQuality(cfg.JPEGQuality),
 		maxBoxes:       normalizeMaxBoxes(cfg.MaxBoxes),
 		namespace:      uuid.MustParse(cropNamespace),
+		cropIdentity:   cropIdentity(cfg.Refiner),
+		refiner:        cfg.Refiner,
 	}, nil
 }
 
@@ -174,7 +190,8 @@ func (svc *Service) cropSpecs(
 
 func (svc *Service) cropUUID(parentID uuid.UUID, rect, bounds image.Rectangle) uuid.UUID {
 	data := fmt.Sprintf(
-		"hoppify-crop-v1|%s|%d,%d,%d,%d",
+		"%s|%s|%d,%d,%d,%d",
+		svc.cropIdentity,
 		parentID.String(),
 		rect.Min.X-bounds.Min.X,
 		rect.Min.Y-bounds.Min.Y,
@@ -207,12 +224,12 @@ func (svc *Service) createMissingCrops(
 		}
 		pending[spec.id] = struct{}{}
 
-		body, err := encodeCropJPEG(img, spec.rect, svc.jpegQuality)
+		crop, err := svc.prepareCrop(ctx, img, spec.rect)
 		if err != nil {
-			return newError(InvalidRequest, "capture image cannot be cropped", err)
+			return err
 		}
 
-		checksum := sha256.Sum256(body)
+		checksum := sha256.Sum256(crop.body)
 		checksumHex := hex.EncodeToString(checksum[:])
 		record := capturemodel.Record{
 			UUID: spec.id,
@@ -224,9 +241,9 @@ func (svc *Service) createMissingCrops(
 			Bucket:         parent.Bucket,
 			ObjectKey:      spec.objectKey,
 			ContentType:    capturemodel.ContentTypeJPEG,
-			SizeBytes:      int64(len(body)),
+			SizeBytes:      int64(len(crop.body)),
 			ChecksumSHA256: checksumHex,
-			Metadata:       map[string]any{},
+			Metadata:       crop.metadata,
 		}
 		prepared = append(prepared, record)
 		objects = append(objects, capturemodel.Object{
@@ -234,7 +251,7 @@ func (svc *Service) createMissingCrops(
 			ObjectKey:      record.ObjectKey,
 			ContentType:    record.ContentType,
 			ChecksumSHA256: record.ChecksumSHA256,
-			Body:           body,
+			Body:           crop.body,
 		})
 	}
 	if len(prepared) == 0 {
@@ -345,16 +362,66 @@ func cropRect(bounds image.Rectangle, bbox []float64) (image.Rectangle, error) {
 	return rect, nil
 }
 
-func encodeCropJPEG(img image.Image, rect image.Rectangle, quality int) ([]byte, error) {
+func (svc *Service) prepareCrop(ctx context.Context, img image.Image, rect image.Rectangle) (preparedCrop, error) {
+	cropped, err := cropImage(img, rect)
+	if err != nil {
+		return preparedCrop{}, newError(InvalidRequest, "capture image cannot be cropped", err)
+	}
+
+	metadata := cropMetadata(cropped)
+	if svc.refiner != nil {
+		refined, refinerMetadata, applied, err := svc.refiner.RefineCrop(ctx, cropped)
+		if err != nil {
+			return preparedCrop{}, newError(InferenceError, "crop refinement failed", err)
+		}
+		if refined != nil && applied {
+			cropped = refined
+			metadata = cropMetadata(cropped)
+		}
+		if len(refinerMetadata) > 0 {
+			metadata["refiner"] = refinerMetadata
+		}
+	}
+
+	body, err := encodeJPEG(cropped, svc.jpegQuality)
+	if err != nil {
+		return preparedCrop{}, newError(InvalidRequest, "capture image cannot be cropped", err)
+	}
+
+	return preparedCrop{body: body, metadata: metadata}, nil
+}
+
+func cropImage(img image.Image, rect image.Rectangle) (image.Image, error) {
+	if rect.Empty() {
+		return nil, fmt.Errorf("crop rectangle is empty")
+	}
+
 	dst := image.NewRGBA(image.Rect(0, 0, rect.Dx(), rect.Dy()))
 	draw.Draw(dst, dst.Bounds(), img, rect.Min, draw.Src)
 
+	return dst, nil
+}
+
+func encodeJPEG(img image.Image, quality int) ([]byte, error) {
 	var body bytes.Buffer
-	if err := jpeg.Encode(&body, dst, &jpeg.Options{Quality: quality}); err != nil {
+	if err := jpeg.Encode(&body, img, &jpeg.Options{Quality: quality}); err != nil {
 		return nil, fmt.Errorf("encode crop jpeg: %w", err)
 	}
 
 	return body.Bytes(), nil
+}
+
+func cropMetadata(img image.Image) map[string]any {
+	bounds := img.Bounds()
+
+	return map[string]any{
+		"content_type": capturemodel.ContentTypeJPEG,
+		"format":       "jpeg",
+		"dimensions": map[string]any{
+			"width":  bounds.Dx(),
+			"height": bounds.Dy(),
+		},
+	}
 }
 
 func decodeImage(body []byte) (image.Image, error) {
@@ -392,4 +459,12 @@ func normalizeMaxBoxes(maxBoxes int) int {
 	}
 
 	return maxBoxes
+}
+
+func cropIdentity(refiner Refiner) string {
+	if refiner != nil {
+		return cropIdentityV2Refined
+	}
+
+	return cropIdentityV1
 }

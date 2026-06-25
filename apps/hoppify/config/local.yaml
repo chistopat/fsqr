@@ -34,14 +34,27 @@ upload:
   jpeg_quality: 95
 
 detector:
+  provider: "onnx"
   model_path: "models/sku110k-yolo11-s640.onnx"
   additional_model_paths:
     - "models/hoppify-yolo11-640n.onnx"
   runtime_library_path: ""
+  endpoint_url: ""
+  api_key: ""
+  timeout: 30s
   image_size: 640
   confidence_threshold: 0.25
   iou_threshold: 0.7
   max_detections: 300
+
+crop_refiner:
+  enabled: false
+  endpoint_url: ""
+  api_key: ""
+  timeout: 30s
+  image_size: 640
+  confidence_threshold: 0.25
+  iou_threshold: 0.7
 
 beer_label:
   model: "gpt-5.4-mini"
