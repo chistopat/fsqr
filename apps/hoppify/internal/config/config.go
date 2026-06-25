@@ -22,12 +22,19 @@ const (
 	defaultMaxFiles                         = 10
 	defaultMaxFileBytes                     = 15 * 1024 * 1024
 	defaultMaxRequestSize                   = 150 * 1024 * 1024
+	defaultDetectorProvider                 = "onnx"
 	defaultDetectorModelPath                = "models/sku110k-yolo11-s640.onnx"
 	defaultDetectorRuntimeLibrary           = ""
 	defaultDetectorImageSize                = 640
 	defaultDetectorConfidence               = 0.25
 	defaultDetectorIOU                      = 0.7
 	defaultDetectorMaxDetections            = 300
+	defaultDetectorTimeout                  = 30 * time.Second
+	defaultCropRefinerEnabled               = false
+	defaultCropRefinerImageSize             = 640
+	defaultCropRefinerConfidence            = 0.25
+	defaultCropRefinerIOU                   = 0.7
+	defaultCropRefinerTimeout               = 30 * time.Second
 	defaultBeerLabelModel                   = "gpt-5.4-mini"
 	defaultBeerLabelOpenAIBaseURL           = "https://api.openai.com/v1"
 	defaultBeerLabelOpenAITimeout           = 30 * time.Second
@@ -47,6 +54,7 @@ type Config struct {
 	S3            S3Config            `mapstructure:"s3"`
 	Upload        UploadConfig        `mapstructure:"upload"`
 	Detector      DetectorConfig      `mapstructure:"detector"`
+	CropRefiner   CropRefinerConfig   `mapstructure:"crop_refiner"`
 	BeerLabel     BeerLabelConfig     `mapstructure:"beer_label"`
 	Observability ObservabilityConfig `mapstructure:"observability"`
 }
@@ -93,12 +101,27 @@ type UploadConfig struct {
 }
 
 type DetectorConfig struct {
-	ModelPath           string  `mapstructure:"model_path"`
-	RuntimeLibraryPath  string  `mapstructure:"runtime_library_path"`
-	ImageSize           int     `mapstructure:"image_size"`
-	ConfidenceThreshold float64 `mapstructure:"confidence_threshold"`
-	IOUThreshold        float64 `mapstructure:"iou_threshold"`
-	MaxDetections       int     `mapstructure:"max_detections"`
+	Provider             string        `mapstructure:"provider"`
+	ModelPath            string        `mapstructure:"model_path"`
+	AdditionalModelPaths []string      `mapstructure:"additional_model_paths"`
+	RuntimeLibraryPath   string        `mapstructure:"runtime_library_path"`
+	EndpointURL          string        `mapstructure:"endpoint_url"`
+	APIKey               string        `mapstructure:"api_key"`
+	Timeout              time.Duration `mapstructure:"timeout"`
+	ImageSize            int           `mapstructure:"image_size"`
+	ConfidenceThreshold  float64       `mapstructure:"confidence_threshold"`
+	IOUThreshold         float64       `mapstructure:"iou_threshold"`
+	MaxDetections        int           `mapstructure:"max_detections"`
+}
+
+type CropRefinerConfig struct {
+	Enabled             bool          `mapstructure:"enabled"`
+	EndpointURL         string        `mapstructure:"endpoint_url"`
+	APIKey              string        `mapstructure:"api_key"`
+	Timeout             time.Duration `mapstructure:"timeout"`
+	ImageSize           int           `mapstructure:"image_size"`
+	ConfidenceThreshold float64       `mapstructure:"confidence_threshold"`
+	IOUThreshold        float64       `mapstructure:"iou_threshold"`
 }
 
 type BeerLabelConfig struct {
@@ -172,6 +195,24 @@ func (cfg UploadConfig) Limits() capturemodel.Limits {
 	}
 }
 
+func (cfg *DetectorConfig) ModelPaths() []string {
+	paths := make([]string, 0, 1+len(cfg.AdditionalModelPaths))
+	seen := make(map[string]struct{}, 1+len(cfg.AdditionalModelPaths))
+	for _, path := range append([]string{cfg.ModelPath}, cfg.AdditionalModelPaths...) {
+		path = strings.TrimSpace(path)
+		if path == "" {
+			continue
+		}
+		if _, ok := seen[path]; ok {
+			continue
+		}
+		seen[path] = struct{}{}
+		paths = append(paths, path)
+	}
+
+	return paths
+}
+
 func setDefaults(loader *viper.Viper, env string) {
 	loader.SetDefault("app.name", "hoppify")
 	loader.SetDefault("app.env", env)
@@ -196,12 +237,39 @@ func setDefaults(loader *viper.Viper, env string) {
 	loader.SetDefault("upload.max_file_bytes", defaultMaxFileBytes)
 	loader.SetDefault("upload.max_request_bytes", defaultMaxRequestSize)
 	loader.SetDefault("upload.jpeg_quality", defaultJPEGQuality)
+	setDetectorDefaults(loader)
+	setCropRefinerDefaults(loader)
+	setBeerLabelDefaults(loader)
+	loader.SetDefault("observability.service_name", "hoppify")
+	loader.SetDefault("observability.metrics.path", "/metrics")
+	loader.SetDefault("observability.metrics.addr", "127.0.0.1:3001")
+}
+
+func setDetectorDefaults(loader *viper.Viper) {
+	loader.SetDefault("detector.provider", defaultDetectorProvider)
 	loader.SetDefault("detector.model_path", defaultDetectorModelPath)
+	loader.SetDefault("detector.additional_model_paths", []string{})
 	loader.SetDefault("detector.runtime_library_path", defaultDetectorRuntimeLibrary)
+	loader.SetDefault("detector.endpoint_url", "")
+	loader.SetDefault("detector.api_key", "")
+	loader.SetDefault("detector.timeout", defaultDetectorTimeout)
 	loader.SetDefault("detector.image_size", defaultDetectorImageSize)
 	loader.SetDefault("detector.confidence_threshold", defaultDetectorConfidence)
 	loader.SetDefault("detector.iou_threshold", defaultDetectorIOU)
 	loader.SetDefault("detector.max_detections", defaultDetectorMaxDetections)
+}
+
+func setCropRefinerDefaults(loader *viper.Viper) {
+	loader.SetDefault("crop_refiner.enabled", defaultCropRefinerEnabled)
+	loader.SetDefault("crop_refiner.endpoint_url", "")
+	loader.SetDefault("crop_refiner.api_key", "")
+	loader.SetDefault("crop_refiner.timeout", defaultCropRefinerTimeout)
+	loader.SetDefault("crop_refiner.image_size", defaultCropRefinerImageSize)
+	loader.SetDefault("crop_refiner.confidence_threshold", defaultCropRefinerConfidence)
+	loader.SetDefault("crop_refiner.iou_threshold", defaultCropRefinerIOU)
+}
+
+func setBeerLabelDefaults(loader *viper.Viper) {
 	loader.SetDefault("beer_label.model", defaultBeerLabelModel)
 	loader.SetDefault("beer_label.openai_api_key", "")
 	loader.SetDefault("beer_label.openai_base_url", defaultBeerLabelOpenAIBaseURL)
@@ -213,9 +281,6 @@ func setDefaults(loader *viper.Viper, env string) {
 	loader.SetDefault("beer_label.recognition_retries", defaultBeerLabelRecognitionRetries)
 	loader.SetDefault("beer_label.recognition_retry_delay", defaultBeerLabelRecognitionRetryDelay)
 	loader.SetDefault("beer_label.recognition_max_batch_size", defaultBeerLabelRecognitionMaxBatchSize)
-	loader.SetDefault("observability.service_name", "hoppify")
-	loader.SetDefault("observability.metrics.path", "/metrics")
-	loader.SetDefault("observability.metrics.addr", "127.0.0.1:3001")
 }
 
 func bindEnv(loader *viper.Viper) {
@@ -241,12 +306,39 @@ func bindEnv(loader *viper.Viper) {
 	_ = loader.BindEnv("upload.max_file_bytes", "HOPPIFY_UPLOAD_MAX_FILE_BYTES")
 	_ = loader.BindEnv("upload.max_request_bytes", "HOPPIFY_UPLOAD_MAX_REQUEST_BYTES")
 	_ = loader.BindEnv("upload.jpeg_quality", "HOPPIFY_UPLOAD_JPEG_QUALITY")
+	bindDetectorEnv(loader)
+	bindCropRefinerEnv(loader)
+	bindBeerLabelEnv(loader)
+	_ = loader.BindEnv("observability.service_name", "HOPPIFY_SERVICE_NAME", "OTEL_SERVICE_NAME")
+	_ = loader.BindEnv("observability.metrics.path", "HOPPIFY_METRICS_PATH")
+	_ = loader.BindEnv("observability.metrics.addr", "HOPPIFY_METRICS_ADDR")
+}
+
+func bindDetectorEnv(loader *viper.Viper) {
+	_ = loader.BindEnv("detector.provider", "HOPPIFY_DETECTOR_PROVIDER")
 	_ = loader.BindEnv("detector.model_path", "HOPPIFY_DETECTOR_MODEL_PATH")
+	_ = loader.BindEnv("detector.additional_model_paths", "HOPPIFY_DETECTOR_ADDITIONAL_MODEL_PATHS")
 	_ = loader.BindEnv("detector.runtime_library_path", "HOPPIFY_DETECTOR_RUNTIME_LIBRARY_PATH")
+	_ = loader.BindEnv("detector.endpoint_url", "HOPPIFY_DETECTOR_ENDPOINT_URL")
+	_ = loader.BindEnv("detector.api_key", "HOPPIFY_DETECTOR_API_KEY")
+	_ = loader.BindEnv("detector.timeout", "HOPPIFY_DETECTOR_TIMEOUT")
 	_ = loader.BindEnv("detector.image_size", "HOPPIFY_DETECTOR_IMAGE_SIZE")
 	_ = loader.BindEnv("detector.confidence_threshold", "HOPPIFY_DETECTOR_CONFIDENCE_THRESHOLD")
 	_ = loader.BindEnv("detector.iou_threshold", "HOPPIFY_DETECTOR_IOU_THRESHOLD")
 	_ = loader.BindEnv("detector.max_detections", "HOPPIFY_DETECTOR_MAX_DETECTIONS")
+}
+
+func bindCropRefinerEnv(loader *viper.Viper) {
+	_ = loader.BindEnv("crop_refiner.enabled", "HOPPIFY_CROP_REFINER_ENABLED")
+	_ = loader.BindEnv("crop_refiner.endpoint_url", "HOPPIFY_CROP_REFINER_ENDPOINT_URL")
+	_ = loader.BindEnv("crop_refiner.api_key", "HOPPIFY_CROP_REFINER_API_KEY")
+	_ = loader.BindEnv("crop_refiner.timeout", "HOPPIFY_CROP_REFINER_TIMEOUT")
+	_ = loader.BindEnv("crop_refiner.image_size", "HOPPIFY_CROP_REFINER_IMAGE_SIZE")
+	_ = loader.BindEnv("crop_refiner.confidence_threshold", "HOPPIFY_CROP_REFINER_CONFIDENCE_THRESHOLD")
+	_ = loader.BindEnv("crop_refiner.iou_threshold", "HOPPIFY_CROP_REFINER_IOU_THRESHOLD")
+}
+
+func bindBeerLabelEnv(loader *viper.Viper) {
 	_ = loader.BindEnv("beer_label.model", "HOPPIFY_BEER_LABEL_MODEL")
 	_ = loader.BindEnv("beer_label.openai_api_key", "HOPPIFY_BEER_LABEL_OPENAI_API_KEY", "OPENAI_API_KEY")
 	_ = loader.BindEnv("beer_label.openai_base_url", "HOPPIFY_BEER_LABEL_OPENAI_BASE_URL")
@@ -263,9 +355,6 @@ func bindEnv(loader *viper.Viper) {
 	_ = loader.BindEnv("beer_label.recognition_retries", "HOPPIFY_BEER_LABEL_RECOGNITION_RETRIES")
 	_ = loader.BindEnv("beer_label.recognition_retry_delay", "HOPPIFY_BEER_LABEL_RECOGNITION_RETRY_DELAY")
 	_ = loader.BindEnv("beer_label.recognition_max_batch_size", "HOPPIFY_BEER_LABEL_RECOGNITION_MAX_BATCH_SIZE")
-	_ = loader.BindEnv("observability.service_name", "HOPPIFY_SERVICE_NAME", "OTEL_SERVICE_NAME")
-	_ = loader.BindEnv("observability.metrics.path", "HOPPIFY_METRICS_PATH")
-	_ = loader.BindEnv("observability.metrics.addr", "HOPPIFY_METRICS_ADDR")
 }
 
 func firstNonEmpty(values ...string) string {

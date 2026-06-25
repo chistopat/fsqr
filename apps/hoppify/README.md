@@ -17,8 +17,11 @@ Current production behavior:
   them in S3-compatible object storage, and records metadata in Postgres. Responses include `uuid`,
   `uri`, and `url`.
 - `POST /api/v1/detect` accepts exactly one source: JSON `uuid`, JSON `url`/`uri` with an `s3://...`
-  object URI, or a multipart `file`, and returns Ultralytics-style object detections.
-- `POST /api/v1/crops` creates JPEG crops and returns each crop `uuid`, `uri`, and `url`.
+  object URI, or a multipart `file`, runs the configured rough detector, and returns an
+  Ultralytics-style detection pool.
+- `POST /api/v1/crops` creates JPEG crops and returns each crop `uuid`, `uri`, and `url`. When
+  `crop_refiner.enabled` is true, each rough crop is sent to the configured OBB model first and the
+  straightened crop is what gets stored and passed to Gemini.
 - `POST /api/v1/beer-labels/identify` accepts JSON `uuid`, `url`, or `uri`, uses Gemini 2.5 Flash-Lite
   with the v3 vision-only prompt, and caches by UUID and v3 prompt version when the source maps to a
   stored capture or crop.
@@ -30,9 +33,10 @@ Required runtime dependencies:
   application credentials.
 - S3-compatible object storage, configured through the YAML files in `config/` with optional
   `HOPPIFY_*` env overrides.
-- ONNX Runtime and the SKU-110K YOLO11s 640 ONNX model. Production and e2e Docker images download
-  `weights/sku110k-yolo11-s640.onnx` during image build, verify its SHA256 checksum, and copy it to
-  `/app/models/sku110k-yolo11-s640.onnx` with `libonnxruntime.so.1.22.0` under `/app/lib`.
+- Detector access. Local and e2e default to the bundled ONNX fallback models. Production Compose
+  defaults to the remote `drinks-detector-fast-v2` endpoint for rough crops and `drinks-obb-fast-v1`
+  for OBB crop refinement. Configure `HOPPIFY_DETECTOR_API_KEY`; optionally set
+  `HOPPIFY_CROP_REFINER_API_KEY` when the OBB model uses a different key.
 - Gemini API access for beer label recognition. Configure `HOPPIFY_BEER_LABEL_GEMINI_API_KEY`,
   `GEMINI_API_KEY`, or `GOOGLE_API_KEY`; without a key, the beer label endpoint returns
   `model_unavailable`.
@@ -55,6 +59,49 @@ Apply Hoppify migrations with:
 
 ```sh
 just postgres-migrate
+```
+
+## Untappd beer catalog
+
+The local `data/beers.parquet` file is intentionally ignored by git. It contains Untappd catalog rows with
+`url`, `untappd_id`, `slog`, `brewery_prefix`, and `last_modified_at`. Migration `006_create_untappd_beers.sql`
+creates the Postgres target table and search indexes for importing this file.
+
+Import the parquet fields like this:
+
+- `untappd_id` -> `untappd_id`
+- `url` -> `url`
+- `slog` -> `untappd_slug`
+- `brewery_prefix` -> `brewery_prefix`
+- `last_modified_at` -> `last_modified_at`
+- `search_text`: lower-case searchable text made from `slog`, replacing non-alphanumeric characters with spaces
+  and collapsing repeated spaces.
+
+For direct Untappd extraction from OCR or model output, parse a full `https://untappd.com/b/.../<id>` URL or a
+trailing numeric Untappd id and look up by `untappd_id` or `url`. For OCR descriptions without a URL, combine
+full-text search with trigram similarity:
+
+```sql
+WITH query AS (
+    SELECT
+        websearch_to_tsquery('simple', $1) AS ts_query,
+        btrim(regexp_replace(lower($1), '[^[:alnum:]]+', ' ', 'g')) AS normalized_query
+)
+SELECT
+    beer.untappd_id,
+    beer.url,
+    beer.untappd_slug,
+    beer.brewery_prefix,
+    ts_rank_cd(to_tsvector('simple', beer.search_text), query.ts_query) AS text_rank,
+    similarity(beer.search_text, query.normalized_query) AS fuzzy_rank
+FROM untappd_beers beer, query
+WHERE to_tsvector('simple', beer.search_text) @@ query.ts_query
+    OR beer.search_text % query.normalized_query
+ORDER BY
+    text_rank DESC,
+    fuzzy_rank DESC,
+    beer.untappd_id
+LIMIT 10;
 ```
 
 Run Hoppify functional tests against the Compose stack with:

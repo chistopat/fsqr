@@ -82,6 +82,86 @@ func TestServiceCreatesImageCropsIdempotently(t *testing.T) {
 	}
 }
 
+func TestServiceRefinesImageCropWhenConfigured(t *testing.T) {
+	t.Parallel()
+
+	parentID := uuid.MustParse(testParentUUID)
+	repository := &fakeRepository{parent: newParentRecord(parentID)}
+	storage := &fakeStorage{object: capturemodel.Object{
+		Bucket:      "hoppify",
+		ObjectKey:   "captures/image/" + testParentUUID + ".jpg",
+		ContentType: capturemodel.ContentTypeJPEG,
+		Body:        newJPEG(t),
+	}}
+	refiner := &fakeRefiner{
+		img:      image.NewRGBA(image.Rect(0, 0, 1, 2)),
+		metadata: map[string]any{"applied": true, "geometry": "obb"},
+		applied:  true,
+	}
+	service := newTestServiceWithConfig(t, repository, storage, Config{JPEGQuality: 95, Refiner: refiner})
+
+	response, err := service.CreateCrops(context.Background(), cropmodel.Request{
+		UUID: testParentUUID,
+		Boxes: []cropmodel.BoxRequest{{
+			BBox: []float64{0, 0, 4, 4},
+		}},
+	})
+	if err != nil {
+		t.Fatalf("create crops: %v", err)
+	}
+
+	if len(response.Crops) != 1 {
+		t.Fatalf("expected one crop, got %d", len(response.Crops))
+	}
+	if refiner.calls != 1 {
+		t.Fatalf("expected one refiner call, got %d", refiner.calls)
+	}
+	cropped, _, err := image.Decode(bytes.NewReader(storage.puts[0].Body))
+	if err != nil {
+		t.Fatalf("decode uploaded crop: %v", err)
+	}
+	if cropped.Bounds().Dx() != 1 || cropped.Bounds().Dy() != 2 {
+		t.Fatalf("expected refined crop dimensions 1x2, got %dx%d", cropped.Bounds().Dx(), cropped.Bounds().Dy())
+	}
+
+	record := repository.children[0]
+	refinerMetadata, ok := record.Metadata["refiner"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected refiner metadata, got %#v", record.Metadata)
+	}
+	if refinerMetadata["geometry"] != "obb" {
+		t.Fatalf("expected refiner geometry metadata, got %#v", refinerMetadata)
+	}
+	dimensions, ok := record.Metadata["dimensions"].(map[string]any)
+	if !ok || dimensions["width"] != 1 || dimensions["height"] != 2 {
+		t.Fatalf("expected refined dimensions metadata, got %#v", record.Metadata["dimensions"])
+	}
+}
+
+func TestServiceReturnsInferenceErrorWhenRefinerFails(t *testing.T) {
+	t.Parallel()
+
+	parentID := uuid.MustParse(testParentUUID)
+	repository := &fakeRepository{parent: newParentRecord(parentID)}
+	storage := &fakeStorage{object: capturemodel.Object{Body: newJPEG(t)}}
+	service := newTestServiceWithConfig(t, repository, storage, Config{
+		JPEGQuality: 95,
+		Refiner:     &fakeRefiner{err: errors.New("refiner failed")},
+	})
+
+	_, err := service.CreateCrops(context.Background(), cropmodel.Request{
+		UUID: testParentUUID,
+		Boxes: []cropmodel.BoxRequest{{
+			BBox: []float64{0, 0, 4, 4},
+		}},
+	})
+
+	assertCropError(t, err, InferenceError)
+	if len(storage.puts) != 0 {
+		t.Fatalf("expected no uploaded crops after refiner failure, got %d", len(storage.puts))
+	}
+}
+
 func TestServiceRejectsInvalidBoxes(t *testing.T) {
 	t.Parallel()
 
@@ -163,7 +243,13 @@ func TestServiceListsImageCrops(t *testing.T) {
 func newTestService(t *testing.T, repository Repository, storage ObjectStorage) *Service {
 	t.Helper()
 
-	service, err := NewService(repository, storage, Config{JPEGQuality: 95})
+	return newTestServiceWithConfig(t, repository, storage, Config{JPEGQuality: 95})
+}
+
+func newTestServiceWithConfig(t *testing.T, repository Repository, storage ObjectStorage, cfg Config) *Service {
+	t.Helper()
+
+	service, err := NewService(repository, storage, cfg)
 	if err != nil {
 		t.Fatalf("new service: %v", err)
 	}
@@ -320,4 +406,27 @@ func (storage *fakeStorage) PutObject(_ context.Context, object capturemodel.Obj
 	storage.puts = append(storage.puts, object)
 
 	return nil
+}
+
+type fakeRefiner struct {
+	img      image.Image
+	metadata map[string]any
+	applied  bool
+	err      error
+	calls    int
+}
+
+func (refiner *fakeRefiner) RefineCrop(
+	_ context.Context,
+	img image.Image,
+) (image.Image, map[string]any, bool, error) {
+	refiner.calls++
+	if refiner.err != nil {
+		return nil, nil, false, refiner.err
+	}
+	if refiner.img == nil {
+		return img, refiner.metadata, refiner.applied, nil
+	}
+
+	return refiner.img, refiner.metadata, refiner.applied, nil
 }

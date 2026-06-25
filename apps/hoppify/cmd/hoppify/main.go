@@ -8,12 +8,14 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
 	"github.com/chistopat/hoppify/internal/config"
 	"github.com/chistopat/hoppify/internal/db"
 	onnxdetector "github.com/chistopat/hoppify/internal/detector/onnx"
+	ultralyticsdetector "github.com/chistopat/hoppify/internal/detector/ultralytics"
 	httpapi "github.com/chistopat/hoppify/internal/http"
 	"github.com/chistopat/hoppify/internal/logger"
 	geminirecognizer "github.com/chistopat/hoppify/internal/recognizer/gemini"
@@ -87,7 +89,11 @@ func run() error {
 		return fmt.Errorf("init captures service: %w", err)
 	}
 
-	objectDetector, closeDetector := newDetectorBackend(cfg.Detector, appLogger.Named("detector.onnx"))
+	objectDetector, closeDetector := newDetectorBackend(
+		&cfg.Detector,
+		cfg.Upload.JPEGQuality,
+		appLogger.Named("detector"),
+	)
 	defer closeDetector()
 
 	detectService, err := detectservice.NewService(repository, objectStorage, objectDetector, detectservice.Config{
@@ -101,6 +107,12 @@ func run() error {
 		MaxObjectBytes: cfg.Upload.Limits().MaxFileBytes,
 		JPEGQuality:    cfg.Upload.JPEGQuality,
 		MaxBoxes:       cfg.Detector.MaxDetections,
+		Refiner: newCropRefiner(
+			cfg.CropRefiner,
+			cfg.Detector.APIKey,
+			cfg.Upload.JPEGQuality,
+			appLogger.Named("crop_refiner.ultralytics"),
+		),
 	})
 	if err != nil {
 		return fmt.Errorf("init crops service: %w", err)
@@ -187,17 +199,34 @@ func newBeerLabelGeminiRecognizer(
 }
 
 func newDetectorBackend(
-	cfg config.DetectorConfig,
+	cfg *config.DetectorConfig,
+	jpegQuality int,
 	detectorLog *zap.Logger,
 ) (detectorBackend detectservice.Detector, closeDetector func()) {
-	detector, err := onnxdetector.NewDetector(onnxdetector.Config{
-		ModelPath:           cfg.ModelPath,
+	switch strings.ToLower(strings.TrimSpace(cfg.Provider)) {
+	case "", "onnx":
+		return newONNXDetectorBackend(cfg, detectorLog.Named("onnx"))
+	case "ultralytics":
+		return newUltralyticsDetectorBackend(cfg, jpegQuality, detectorLog.Named("ultralytics"))
+	default:
+		err := fmt.Errorf("unsupported detector provider %q", cfg.Provider)
+		detectorLog.Error("detector unavailable", zap.Error(err))
+
+		return detectservice.NewUnavailableDetector(err), func() {}
+	}
+}
+
+func newONNXDetectorBackend(
+	cfg *config.DetectorConfig,
+	detectorLog *zap.Logger,
+) (detectorBackend detectservice.Detector, closeDetector func()) {
+	detector, err := onnxdetector.NewDetectorSet(onnxdetector.Config{
 		RuntimeLibraryPath:  cfg.RuntimeLibraryPath,
 		ImageSize:           cfg.ImageSize,
 		ConfidenceThreshold: cfg.ConfidenceThreshold,
 		IOUThreshold:        cfg.IOUThreshold,
 		MaxDetections:       cfg.MaxDetections,
-	})
+	}, cfg.ModelPaths())
 	if err != nil {
 		detectorLog.Error("onnx detector unavailable", zap.Error(err))
 		return detectservice.NewUnavailableDetector(err), func() {}
@@ -208,6 +237,62 @@ func newDetectorBackend(
 			detectorLog.Error("close onnx detector failed", zap.Error(err))
 		}
 	}
+}
+
+func newUltralyticsDetectorBackend(
+	cfg *config.DetectorConfig,
+	jpegQuality int,
+	detectorLog *zap.Logger,
+) (detectorBackend detectservice.Detector, closeDetector func()) {
+	detector, err := ultralyticsdetector.NewClient(ultralyticsdetector.Config{
+		EndpointURL:         cfg.EndpointURL,
+		APIKey:              cfg.APIKey,
+		Timeout:             cfg.Timeout,
+		ImageSize:           cfg.ImageSize,
+		ConfidenceThreshold: cfg.ConfidenceThreshold,
+		IOUThreshold:        cfg.IOUThreshold,
+		MaxDetections:       cfg.MaxDetections,
+		JPEGQuality:         jpegQuality,
+	})
+	if err != nil {
+		detectorLog.Error("ultralytics detector unavailable", zap.Error(err))
+		return detectservice.NewUnavailableDetector(err), func() {}
+	}
+
+	return detector, func() {}
+}
+
+func newCropRefiner(
+	cfg config.CropRefinerConfig,
+	fallbackAPIKey string,
+	jpegQuality int,
+	refinerLog *zap.Logger,
+) cropservice.Refiner {
+	if !cfg.Enabled {
+		return nil
+	}
+
+	apiKey := strings.TrimSpace(cfg.APIKey)
+	if apiKey == "" {
+		apiKey = strings.TrimSpace(fallbackAPIKey)
+	}
+
+	refiner, err := ultralyticsdetector.NewCropRefiner(ultralyticsdetector.Config{
+		EndpointURL:         cfg.EndpointURL,
+		APIKey:              apiKey,
+		Timeout:             cfg.Timeout,
+		ImageSize:           cfg.ImageSize,
+		ConfidenceThreshold: cfg.ConfidenceThreshold,
+		IOUThreshold:        cfg.IOUThreshold,
+		MaxDetections:       1,
+		JPEGQuality:         jpegQuality,
+	})
+	if err != nil {
+		refinerLog.Error("ultralytics crop refiner unavailable", zap.Error(err))
+		return cropservice.NewUnavailableRefiner(err)
+	}
+
+	return refiner
 }
 
 func serveUntilStopped(appLog *zap.Logger, server, metricsServer *http.Server, cfg *config.Config) error {

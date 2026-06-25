@@ -16,6 +16,7 @@ etl/*
 !etl/scripts/
 etl/scripts/*
 !etl/scripts/import_overture_divisions.py
+!etl/scripts/import_hoppify_untappd_beers.py
 
 bin/*
 !bin/.gitkeep
@@ -23,6 +24,7 @@ bin/*
 apps/hoppify/models/*
 !apps/hoppify/models/
 !apps/hoppify/models/sku110k-yolo11-s640.onnx
+!apps/hoppify/models/hoppify-yolo11-640n.onnx
 
 deployment/.terraform/
 deployment/*.tfstate
@@ -32,3 +34,5 @@ deployment/*.tfvars.json
 
 # OpenTofu/Terraform local artifacts
 deployment/.terraform.lock.hcl
+
+apps/hoppify/data/**

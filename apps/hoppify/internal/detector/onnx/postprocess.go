@@ -136,6 +136,23 @@ func nonMaxSuppression(
 	iouThreshold float64,
 	maxDetections int,
 ) []detectionmodel.Detection {
+	return nonMaxSuppressionWithClassMatching(detections, iouThreshold, maxDetections, true)
+}
+
+func nonMaxSuppressionClassAgnostic(
+	detections []detectionmodel.Detection,
+	iouThreshold float64,
+	maxDetections int,
+) []detectionmodel.Detection {
+	return nonMaxSuppressionWithClassMatching(detections, iouThreshold, maxDetections, false)
+}
+
+func nonMaxSuppressionWithClassMatching(
+	detections []detectionmodel.Detection,
+	iouThreshold float64,
+	maxDetections int,
+	matchClass bool,
+) []detectionmodel.Detection {
 	sort.Slice(detections, func(i, j int) bool {
 		return detections[i].Confidence > detections[j].Confidence
 	})
@@ -145,7 +162,7 @@ func nonMaxSuppression(
 		if len(selected) >= maxDetections {
 			break
 		}
-		if overlapsSelected(candidate, selected, iouThreshold) {
+		if overlapsSelected(candidate, selected, iouThreshold, matchClass) {
 			continue
 		}
 		selected = append(selected, candidate)
@@ -158,9 +175,11 @@ func overlapsSelected(
 	candidate detectionmodel.Detection,
 	selected []detectionmodel.Detection,
 	iouThreshold float64,
+	matchClass bool,
 ) bool {
 	for _, existing := range selected {
-		if candidate.Class == existing.Class && boxIoU(candidate.Box, existing.Box) > iouThreshold {
+		classMatches := !matchClass || candidate.Class == existing.Class
+		if classMatches && boxIoU(candidate.Box, existing.Box) > iouThreshold {
 			return true
 		}
 	}

@@ -179,8 +179,9 @@ paths:
     post:
       summary: Detect objects in a capture image
       description: >
-        Runs the configured object detector against exactly one image source: a stored capture UUID,
-        an S3 URI returned by captures/crops, or a direct multipart file.
+        Runs the configured rough object detector against exactly one image source: a stored capture UUID,
+        an S3 URI returned by captures/crops, or a direct multipart file. The result is an
+        Ultralytics-style detection pool intended for rough crop creation.
       requestBody:
         required: true
         content:
@@ -297,7 +298,8 @@ paths:
       summary: Create image crops from known bounding boxes
       description: >
         Cuts JPEG crop captures from an existing capture image using bounding boxes
-        already produced by detection. This endpoint does not run inference.
+        already produced by detection. When crop refinement is enabled, each rough crop is sent to
+        the configured OBB model and the straightened crop is stored.
         Repeating the same parent UUID and bounding boxes returns the same crop captures.
       requestBody:
         required: true
@@ -974,7 +976,7 @@ components:
             - 1280
         results:
           type: array
-          description: Detections ordered by descending confidence after NMS.
+          description: Detections from all configured detector models, ordered by descending confidence after NMS.
           items:
             $ref: "#/components/schemas/Detection"
         speed:
