@@ -28,6 +28,7 @@ type handlerConfig struct {
 	detectService          DetectorService
 	cropService            CropCreator
 	cropLister             CropLister
+	beerSearchService      BeerSearcher
 	beerLabelService       BeerLabelIdentifier
 	beerLabelBatchService  BeerLabelBatchIdentifier
 	beerLabelBatchStreamer BeerLabelBatchStreamer
@@ -61,6 +62,12 @@ func WithCropService(service CropCreator) HandlerOption {
 		if lister, ok := service.(CropLister); ok {
 			cfg.cropLister = lister
 		}
+	}
+}
+
+func WithBeerSearchService(service BeerSearcher) HandlerOption {
+	return func(cfg *handlerConfig) {
+		cfg.beerSearchService = service
 	}
 }
 
@@ -118,6 +125,8 @@ func NewHandler(options ...HandlerOption) http.Handler {
 	mux.HandleFunc("POST /api/v1/detect", detectObjects(cfg.detectService, cfg.limits, cfg.log))
 	mux.HandleFunc("GET /api/v1/crops", listCrops(cfg.cropLister, cfg.log))
 	mux.HandleFunc("POST /api/v1/crops", createCrops(cfg.cropService, cfg.log))
+	mux.HandleFunc("GET /beer/search", searchBeers(cfg.beerSearchService, cfg.log))
+	mux.HandleFunc("GET /api/v1/beer/search", searchBeers(cfg.beerSearchService, cfg.log))
 	mux.HandleFunc("GET /api/v1/beer-labels/recognitions", listBeerLabelRecognitions(cfg.beerLabelLister, cfg.log))
 	mux.HandleFunc("POST /api/v1/beer-labels/identify", identifyBeerLabel(cfg.beerLabelService, cfg.log))
 	mux.HandleFunc(

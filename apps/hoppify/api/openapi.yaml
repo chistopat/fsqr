@@ -23,6 +23,70 @@ paths:
                   service:
                     type: string
                     example: hoppify
+  /beer/search:
+    get:
+      summary: Search Untappd beers
+      description: Returns the top 10 Untappd beer catalog matches using full-text and trigram search.
+      parameters:
+        - name: query
+          in: query
+          required: true
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 256
+          description: Beer, brewery, or OCR text to search for.
+      responses:
+        "200":
+          description: Beer matches were returned
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BeerSearchResponse"
+        "400":
+          description: Invalid search query
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          description: Internal error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /api/v1/beer/search:
+    get:
+      summary: Search Untappd beers
+      description: Versioned alias for `/beer/search`.
+      parameters:
+        - name: query
+          in: query
+          required: true
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 256
+          description: Beer, brewery, or OCR text to search for.
+      responses:
+        "200":
+          description: Beer matches were returned
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BeerSearchResponse"
+        "400":
+          description: Invalid search query
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          description: Internal error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
   /api/v1/captures:
     get:
       summary: List image captures
@@ -1160,6 +1224,59 @@ components:
         hasMore:
           type: boolean
           example: true
+    BeerSearchResponse:
+      type: object
+      required:
+        - query
+        - results
+      properties:
+        query:
+          type: string
+          example: Punk IPA BrewDog
+        results:
+          type: array
+          maxItems: 10
+          items:
+            $ref: "#/components/schemas/BeerSearchResult"
+    BeerSearchResult:
+      type: object
+      required:
+        - untappdId
+        - url
+        - untappdSlug
+        - searchText
+        - lastModifiedAt
+        - textRank
+        - fuzzyRank
+      properties:
+        untappdId:
+          type: integer
+          format: int64
+          example: 123
+        url:
+          type: string
+          format: uri
+          example: https://untappd.com/b/brewdog-punk-ipa/123
+        untappdSlug:
+          type: string
+          example: brewdog-punk-ipa
+        breweryPrefix:
+          type: string
+          example: brewdog
+        searchText:
+          type: string
+          example: brewdog punk ipa
+        lastModifiedAt:
+          type: string
+          format: date-time
+        textRank:
+          type: number
+          format: double
+          example: 0.42
+        fuzzyRank:
+          type: number
+          format: double
+          example: 0.74
     CaptureListItem:
       type: object
       required:

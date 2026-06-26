@@ -6,6 +6,7 @@ import (
 	"net/http"
 
 	beerlabelservice "github.com/chistopat/hoppify/internal/service/beerlabels"
+	beerservice "github.com/chistopat/hoppify/internal/service/beers"
 	captureservice "github.com/chistopat/hoppify/internal/service/captures"
 	cropservice "github.com/chistopat/hoppify/internal/service/crops"
 	detectservice "github.com/chistopat/hoppify/internal/service/detect"
@@ -79,6 +80,16 @@ func writeCropError(w http.ResponseWriter, err error) {
 	}
 
 	writeKnownError(w, string(cropErr.Code), cropErr.Message)
+}
+
+func writeBeerSearchError(w http.ResponseWriter, err error) {
+	var beerErr *beerservice.Error
+	if !errors.As(err, &beerErr) {
+		writeError(w, http.StatusInternalServerError, string(beerservice.InternalError), "internal server error")
+		return
+	}
+
+	writeKnownError(w, string(beerErr.Code), beerErr.Message)
 }
 
 func writeBeerLabelError(w http.ResponseWriter, err error) {

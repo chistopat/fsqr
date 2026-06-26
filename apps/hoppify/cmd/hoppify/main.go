@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"fmt"
 	"log"
@@ -20,8 +21,10 @@ import (
 	"github.com/chistopat/hoppify/internal/logger"
 	geminirecognizer "github.com/chistopat/hoppify/internal/recognizer/gemini"
 	beerlabelrepo "github.com/chistopat/hoppify/internal/repository/beerlabels"
+	beerrepo "github.com/chistopat/hoppify/internal/repository/beers"
 	capturerepo "github.com/chistopat/hoppify/internal/repository/captures"
 	beerlabelservice "github.com/chistopat/hoppify/internal/service/beerlabels"
+	beerservice "github.com/chistopat/hoppify/internal/service/beers"
 	captureservice "github.com/chistopat/hoppify/internal/service/captures"
 	cropservice "github.com/chistopat/hoppify/internal/service/crops"
 	detectservice "github.com/chistopat/hoppify/internal/service/detect"
@@ -129,6 +132,10 @@ func run() error {
 	if err != nil {
 		return err
 	}
+	beerSearchService, err := newBeerSearchService(database, appLogger)
+	if err != nil {
+		return err
+	}
 
 	metrics := httpapi.NewMetrics(repository, appLogger.Named("metrics"))
 	server := &http.Server{
@@ -137,6 +144,7 @@ func run() error {
 			httpapi.WithCaptureService(captureService),
 			httpapi.WithDetectService(detectService),
 			httpapi.WithCropService(cropService),
+			httpapi.WithBeerSearchService(beerSearchService),
 			httpapi.WithBeerLabelService(beerLabelService),
 			httpapi.WithCaptureLimits(cfg.Upload.Limits()),
 			httpapi.WithLogger(appLogger.Named("http")),
@@ -151,6 +159,20 @@ func run() error {
 	}
 
 	return serveUntilStopped(appLogger, server, metricsServer, &cfg)
+}
+
+func newBeerSearchService(database *sql.DB, appLogger *zap.Logger) (*beerservice.Service, error) {
+	beerRepository, err := beerrepo.New(database, appLogger.Named("beers.repository"))
+	if err != nil {
+		return nil, fmt.Errorf("init beers repository: %w", err)
+	}
+
+	beerSearchService, err := beerservice.NewService(beerRepository)
+	if err != nil {
+		return nil, fmt.Errorf("init beers service: %w", err)
+	}
+
+	return beerSearchService, nil
 }
 
 func newBeerLabelService(

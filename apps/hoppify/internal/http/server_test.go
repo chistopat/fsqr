@@ -13,11 +13,13 @@ import (
 	"testing"
 	"time"
 
+	beermodel "github.com/chistopat/hoppify/internal/models/beer"
 	beerlabelmodel "github.com/chistopat/hoppify/internal/models/beerlabel"
 	capturemodel "github.com/chistopat/hoppify/internal/models/capture"
 	cropmodel "github.com/chistopat/hoppify/internal/models/crop"
 	detectionmodel "github.com/chistopat/hoppify/internal/models/detection"
 	beerlabelservice "github.com/chistopat/hoppify/internal/service/beerlabels"
+	beerservice "github.com/chistopat/hoppify/internal/service/beers"
 	captureservice "github.com/chistopat/hoppify/internal/service/captures"
 	cropservice "github.com/chistopat/hoppify/internal/service/crops"
 	detectservice "github.com/chistopat/hoppify/internal/service/detect"
@@ -91,6 +93,79 @@ func TestHandlerServesSwaggerViewer(t *testing.T) {
 	if !strings.Contains(response.Body.String(), `url: "/swagger.json"`) {
 		t.Fatalf("expected swagger viewer to load /swagger.json, got %q", response.Body.String())
 	}
+}
+
+func TestSearchBeersReturnsResults(t *testing.T) {
+	t.Parallel()
+
+	modifiedAt := time.Date(2026, 6, 26, 9, 30, 0, 0, time.UTC)
+	service := &fakeBeerSearchService{response: beermodel.SearchResponse{
+		Query: "punk ipa",
+		Results: []beermodel.Result{{
+			UntappdID:      123,
+			URL:            "https://untappd.com/b/brewdog-punk-ipa/123",
+			UntappdSlug:    "brewdog-punk-ipa",
+			BreweryPrefix:  "brewdog",
+			SearchText:     "brewdog punk ipa",
+			LastModifiedAt: modifiedAt,
+			TextRank:       0.42,
+			FuzzyRank:      0.74,
+		}},
+	}}
+	handler := NewHandler(WithBeerSearchService(service))
+	request := httptest.NewRequest(http.MethodGet, "/beer/search?query=punk%20ipa", nil)
+	response := httptest.NewRecorder()
+
+	handler.ServeHTTP(response, request)
+
+	if response.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d with body %q", http.StatusOK, response.Code, response.Body.String())
+	}
+	if service.query != "punk ipa" {
+		t.Fatalf("unexpected search query: %q", service.query)
+	}
+
+	var body beermodel.SearchResponse
+	if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if len(body.Results) != 1 || body.Results[0].UntappdID != 123 {
+		t.Fatalf("unexpected beer search response: %#v", body)
+	}
+}
+
+func TestSearchBeersVersionedRouteReturnsResults(t *testing.T) {
+	t.Parallel()
+
+	service := &fakeBeerSearchService{response: beermodel.SearchResponse{Query: "punk ipa"}}
+	handler := NewHandler(WithBeerSearchService(service))
+	request := httptest.NewRequest(http.MethodGet, "/api/v1/beer/search?query=punk%20ipa", nil)
+	response := httptest.NewRecorder()
+
+	handler.ServeHTTP(response, request)
+
+	if response.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d with body %q", http.StatusOK, response.Code, response.Body.String())
+	}
+	if service.query != "punk ipa" {
+		t.Fatalf("unexpected search query: %q", service.query)
+	}
+}
+
+func TestSearchBeersRejectsInvalidQuery(t *testing.T) {
+	t.Parallel()
+
+	service := &fakeBeerSearchService{err: &beerservice.Error{
+		Code:    beerservice.InvalidRequest,
+		Message: "query must not be empty",
+	}}
+	handler := NewHandler(WithBeerSearchService(service))
+	request := httptest.NewRequest(http.MethodGet, "/beer/search?query=", nil)
+	response := httptest.NewRecorder()
+
+	handler.ServeHTTP(response, request)
+
+	assertAPIError(t, response, http.StatusBadRequest, string(beerservice.InvalidRequest))
 }
 
 func TestCreateCapturesAcceptsMultipartFiles(t *testing.T) {
@@ -950,6 +1025,12 @@ type fakeCropService struct {
 	err          error
 }
 
+type fakeBeerSearchService struct {
+	response beermodel.SearchResponse
+	query    string
+	err      error
+}
+
 type fakeBeerLabelService struct {
 	response      beerlabelmodel.Response
 	request       beerlabelmodel.Request
@@ -998,6 +1079,18 @@ func (service *fakeCropService) ListCrops(
 	}
 
 	return service.listResponse, nil
+}
+
+func (service *fakeBeerSearchService) SearchBeers(
+	_ context.Context,
+	query string,
+) (beermodel.SearchResponse, error) {
+	service.query = query
+	if service.err != nil {
+		return beermodel.SearchResponse{}, service.err
+	}
+
+	return service.response, nil
 }
 
 func (service *fakeBeerLabelService) Identify(
